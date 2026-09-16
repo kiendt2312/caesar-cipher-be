@@ -22,7 +22,7 @@
 
 ## 4. HTTP Adapter — Text API
 
-- [x] 4.1 Viết `parse_key` và model request/response trong `app/api/schemas.py`. JSON: kiểm `type(v) is int` để chặn `bool` (là subclass của `int`), `float`, và numeric string (design §Decisions.7). **Xong khi:** `true`, `3.0`, `"3"` đều bị từ chối; `3`, `-3`, `29` được nhận.
+- [x] 4.1 Viết `parse_key` và model request/response trong `app/api/schemas.py`. JSON: giữ token integer bằng hook `parse_int`, chấp nhận đúng loại token đó (hoặc exact `int` khi gọi nội bộ), tính modulo theo chữ số để không dựng số nguyên khổng lồ, đồng thời chặn `bool`, `float` và numeric string (design §Decisions.7). **Xong khi:** `true`, `3.0`, `"3"` đều bị từ chối; `3`, `-3`, `29` và JSON integer dài hơn 4.300 chữ số được nhận mà không tắt giới hạn an toàn toàn tiến trình.
 - [x] 4.2 Cài quy tắc key vắng mặt / `null` / chuỗi rỗng → `"Thiếu khóa."`; có giá trị thực nhưng không phải số nguyên → `"Khóa phải là số nguyên."`. **Xong khi:** 4 trường hợp trên trả đúng chuỗi tương ứng.
 - [x] 4.3 Cài thứ tự validate của design §Decisions.9 cho luồng JSON: body đọc được → `text` → hiện diện `key` → định dạng `key`. **Xong khi:** `{}` → `"Văn bản không được để trống."`; `{"text": "", "key": "3"}` → lỗi text chứ không phải lỗi key.
 - [x] 4.4 Viết `app/api/routes_text.py`: `POST /api/caesar/encrypt` và `POST /api/caesar/decrypt`, gọi `transform_text`. **Xong khi:** hai endpoint hiện trong `/docs` và trả `{"success": true, "result": "..."}`.

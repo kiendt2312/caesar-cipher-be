@@ -365,7 +365,7 @@ muốn khẳng định hành vi 500, phải dựng client với `raise_server_ex
 - *Dịch thông báo của Pydantic sang tiếng Việt bằng một bảng ánh xạ.* Cực kỳ mong manh: thông báo của
   Pydantic là chi tiết nội bộ, đổi theo phiên bản, và không bao giờ ánh xạ 1-1 vào 13 dòng của docx §5.
 
-### 7. Từ chối key kiểu boolean/float/numeric string trong JSON: kiểm tra `type(v) is int`
+### 7. Giữ nguyên kiểu JSON của key và nhận mọi JSON integer mà không dựng số nguyên khổng lồ
 
 **Vấn đề — hai cạm bẫy chồng lên nhau.**
 1. **`bool` là lớp con của `int` trong Python.** `isinstance(True, int)` là `True`, và `True + 2 == 3`.
@@ -374,20 +374,32 @@ muốn khẳng định hành vi 500, phải dựng client với `raise_server_ex
 2. **Pydantic ép kiểu lỏng ở chế độ mặc định:** `"3"` → `3`, `3.0` → `3`. Spec `text-cipher-api` yêu cầu
    từ chối cả hai bằng 422 `"Khóa phải là số nguyên."`
 
-**Quyết định.** Khai báo `key: Any = MISSING` (sentinel riêng, phân biệt được "vắng mặt" với `None`) và
-kiểm tra tường minh bằng **`type(v) is int`**, không phải `isinstance`:
+3. **Parser chuẩn của Python giới hạn chuyển chuỗi thập phân sang `int`.** Từ Python 3.11, một JSON
+   integer dài hơn mặc định 4.300 chữ số làm `json.loads` ném `ValueError`, trong khi spec
+   `text-cipher-api` yêu cầu nhận mọi JSON integer và trần request hạ tầng đã giới hạn tổng body ở
+   64 MiB.
+
+**Quyết định.** Hai route text đọc body JSON bằng `json.loads(..., parse_int=JsonIntegerToken)`. Hook
+`parse_int` chỉ được JSON decoder gọi cho token số nguyên đúng cú pháp; vì vậy numeric string vẫn là
+`str`, boolean vẫn là `bool`, float vẫn là `float`, còn JSON integer được giữ bằng một subtype `str`
+riêng thay vì bị đổi ngay thành Python `int`. `parse_key` chỉ nhận **chính xác** `JsonIntegerToken`
+(hoặc `int` khi model được gọi trực tiếp trong code/test), rồi tính modulo 26 theo từng chữ số. Cách
+này tuyến tính theo kích thước body, không tắt giới hạn an toàn toàn tiến trình và không dựng số nguyên
+khổng lồ chỉ để Caesar Core chuẩn hóa lại:
 
 ```python
 if key is MISSING or key is None:
     raise MissingKeyError()            # 422 "Thiếu khóa."
+if type(key) is JsonIntegerToken:
+    return decimal_modulo_26(key)       # giữ dấu; không gọi int(key)
 if type(key) is not int:               # bool/float/str/list/dict đều rớt ở đây
     raise InvalidKeyError()            # 422 "Khóa phải là số nguyên."
 ```
 
-`type(True) is bool`, không phải `int`, nên một dòng này loại sạch boolean; float, string, list, dict,
-`Decimal` cũng đều rớt. Và nó ánh xạ **chính xác** vào khái niệm "JSON integer" của docx §4.2, vì
-`json.loads` cho ra đúng `int` cho `3`, `float` cho `3.0`, `bool` cho `true`, `str` cho `"3"` — quan hệ
-1-1 giữa kiểu Python thu được và kiểu JSON gốc.
+`type(True) is bool`, không phải token hay `int`, nên kiểm tra vẫn loại sạch boolean; float, string,
+list và dict cũng đều rớt. Route parse thủ công vẫn bắt buộc media type JSON, body đọc được và top-level
+object trước khi chạy thứ tự validate field; OpenAPI request schema được khai báo tường minh để `/docs`
+không mất hợp đồng.
 
 **Quy tắc "thiếu" và "sai kiểu" (đã chốt, áp dụng cho cả hai endpoint).** `key` vắng mặt, `key: null`,
 hoặc (ở multipart) `key` là chuỗi rỗng → 422 `"Thiếu khóa."`; chỉ khi **có giá trị thực mà không parse
@@ -404,7 +416,10 @@ tách bạch vẫn giữ cho logic đọc đúng ý định.
   quy định nguyên văn. Đổi phiên bản Pydantic có thể làm hỏng lặng lẽ.
 - *`isinstance(key, int) and not isinstance(key, bool)`.* Đúng về hành vi, nhưng diễn đạt quy tắc theo
   kiểu "trừ hao" và mọi người đọc đều phải dừng lại nghĩ một nhịp. `type(v) is int` nói thẳng điều ta muốn.
-- *Tự viết parser JSON để giữ kiểu gốc.* Thừa — `json.loads` đã giữ đủ thông tin kiểu.
+- *Dùng parser mặc định rồi tắt toàn cục `sys.set_int_max_str_digits(0)`.* Đáp ứng ca hơn 4.300 chữ số
+  nhưng gỡ biện pháp chống DoS cho toàn tiến trình và vẫn dựng một `int` khổng lồ không cần thiết.
+- *Tự viết parser JSON hoàn chỉnh.* Không cần thiết; hook chuẩn `parse_int` đã giữ đúng ranh giới kiểu
+  JSON mà không phải tự hiện thực grammar JSON.
 
 ### 8. Validate `key` ở endpoint multipart: quy tắc parse chuỗi tường minh (QUYẾT ĐỊNH THIẾT KẾ)
 
@@ -955,11 +970,12 @@ theo danh sách này chứ không theo phần trăm; (c) `branch = true` khiến
 Tuần 1) phải được chạm thật, khó "ăn gian" bằng vài test happy path; (d) quy ước review: test không có
 assert về **hành vi quan sát được** thì bị từ chối, kể cả khi coverage đã đạt.
 
-**[Hai đường validate `key` — JSON strict và parse chuỗi — có thể trôi lệch nhau]** → Endpoint JSON dùng
-`type(v) is int`, endpoint multipart dùng regex; hai quy tắc khác nhau về bản chất nên dễ phân kỳ theo
-thời gian (ví dụ một bên chấp nhận `"3.0"`, bên kia không). Giảm thiểu: cả hai đi qua **một** module
-`app/api/schemas.py`, và bảng ở Quyết định 8 được dùng làm tham số cho test ở **cả hai** endpoint, kèm
-một test khẳng định `3.0` bị từ chối ở cả hai nơi.
+**[Hai đường validate `key` — JSON token và parse chuỗi — có thể trôi lệch nhau]** → Endpoint JSON dùng
+hook `parse_int` để nhận đúng token số nguyên và chuẩn hóa theo từng chữ số; endpoint multipart dùng
+regex cùng trần 32 ký tự. Hai quy tắc khác nhau về bản chất nên dễ phân kỳ theo thời gian (ví dụ một bên
+chấp nhận `"3.0"`, bên kia không). Giảm thiểu: cả hai đi qua **một** module `app/api/schemas.py`; test
+khẳng định `3.0` bị từ chối ở cả hai nơi, numeric string không biến thành token, và JSON integer dài
+hơn 4.300 chữ số vẫn trả kết quả Caesar đúng mà không thay đổi giới hạn chuyển đổi `int` toàn tiến trình.
 
 **[Trần lạm dụng 64 MiB ở Tầng 0 là con số chọn tay và nằm ngoài DOCX]** → Đây là ngoại lệ hạ tầng
 OpenSpec đã được chủ sở hữu phê duyệt, không phải giới hạn nghiệp vụ mới: primary DOCX và bản trích giữ

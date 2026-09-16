@@ -238,8 +238,17 @@ function clearResult({ keepNotice = false } = {}) {
   elements.result.className = "output empty";
   elements.result.textContent = "Kết quả sẽ hiển thị ở đây sau khi xử lý.";
   elements.analysis.replaceChildren();
+  renderOutputView();
   setStatus(elements.outputStatus, "Chưa xử lý");
   if (!keepNotice) hideNotice();
+}
+
+function renderOutputView() {
+  elements.result.hidden = state.view !== "result";
+  elements.analysis.hidden = state.view !== "analysis";
+  document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
+    tab.setAttribute("aria-selected", String(tab.dataset.view === state.view));
+  });
 }
 
 function render() {
@@ -286,11 +295,7 @@ function render() {
     elements.actionButton.disabled = !(inputValid && keyValid);
   }
 
-  elements.result.hidden = state.view !== "result";
-  elements.analysis.hidden = state.view !== "analysis";
-  document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
-    tab.setAttribute("aria-selected", String(tab.dataset.view === state.view));
-  });
+  renderOutputView();
   renderShiftTable();
 }
 

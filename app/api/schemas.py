@@ -26,6 +26,12 @@ class JsonIntegerToken(str):
     """A syntactically valid JSON integer retained without a Python int conversion."""
 
 
+def _reject_nonstandard_json_constant(value: str) -> None:
+    """Reject NaN and infinities, which Python accepts but JSON does not define."""
+
+    raise json.JSONDecodeError("Non-standard JSON constant", value, 0)
+
+
 class TextCipherRequest(BaseModel):
     """Raw JSON fields retained for deterministic, application-level validation."""
 
@@ -78,7 +84,11 @@ def decode_text_request(raw: bytes, content_type: str | None) -> TextCipherReque
         raise InvalidRequestBodyError()
 
     try:
-        decoded = json.loads(raw, parse_int=JsonIntegerToken)
+        decoded = json.loads(
+            raw,
+            parse_int=JsonIntegerToken,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
         if type(decoded) is not dict:
             raise InvalidRequestBodyError()
         return TextCipherRequest.model_validate(decoded)

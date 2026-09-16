@@ -123,10 +123,17 @@ def test_real_api_distinguishes_server_errors_from_network_failures() -> None:
 
 
 def test_ui_resets_result_tab_times_out_requests_and_ignores_stale_file_reads() -> None:
-    clear_result = SCRIPT.split("function clearResult", 1)[1].split("function render", 1)[0]
-    render = SCRIPT.split("function render", 1)[1].split("function selectMode", 1)[0]
+    clear_result = SCRIPT.split("function clearResult", 1)[1].split("function renderOutputView", 1)[
+        0
+    ]
+    output_view = SCRIPT.split("function renderOutputView", 1)[1].split("function render()", 1)[0]
+    render = SCRIPT.split("function render()", 1)[1].split("function selectMode", 1)[0]
     assert 'state.view = "result"' in clear_result
-    assert "tab.dataset.view === state.view" in render
+    assert "renderOutputView();" in clear_result
+    assert 'elements.analysis.hidden = state.view !== "analysis"' in output_view
+    assert 'tab.setAttribute("aria-selected"' in output_view
+    assert "tab.dataset.view === state.view" in output_view
+    assert "renderOutputView();" in render
     assert "new AbortController()" in SCRIPT
     assert "controller.abort()" in SCRIPT
     assert "window.clearTimeout(timeout)" in SCRIPT

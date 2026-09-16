@@ -314,6 +314,22 @@ def test_unreadable_or_non_object_bodies_are_canonical(
     _assert_error(client.post(path, **kwargs), 422, messages.INVALID_REQUEST_BODY)
 
 
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("path", [ENCRYPT_PATH, DECRYPT_PATH])
+def test_nonstandard_numeric_constants_are_malformed_json(
+    client: TestClient, path: str, constant: str
+) -> None:
+    raw = f'{{"text":"abc","key":{constant}}}'
+
+    response = client.post(
+        path,
+        content=raw,
+        headers={"content-type": "application/json"},
+    )
+
+    _assert_error(response, 422, messages.INVALID_REQUEST_BODY)
+
+
 # Scenarios 37-40: Unicode, emoji, LF, CRLF, and special characters pass through the API.
 def test_accented_vietnamese_text_is_preserved(client: TestClient) -> None:
     response = client.post(ENCRYPT_PATH, json={"text": "Xin chào", "key": 3})

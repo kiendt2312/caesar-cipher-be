@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.errors.exceptions import (
     EmptyTextError,
     InvalidActionError,
     InvalidKeyError,
+    InvalidRequestBodyError,
     InvalidResponseModeError,
     MissingKeyError,
 )
@@ -18,6 +20,10 @@ from app.errors.exceptions import (
 MISSING: Final = object()
 MULTIPART_KEY_MAX_LENGTH = 32
 _MULTIPART_KEY_PATTERN = re.compile(r"^[+-]?[0-9]+$")
+
+
+class JsonIntegerToken(str):
+    """A syntactically valid JSON integer retained without a Python int conversion."""
 
 
 class TextCipherRequest(BaseModel):
@@ -51,9 +57,35 @@ def parse_key(value: Any) -> int:
 
     if value is MISSING or value is None or (type(value) is str and value == ""):
         raise MissingKeyError()
+    if type(value) is JsonIntegerToken:
+        digits = value.removeprefix("-")
+        normalized = 0
+        for digit in digits:
+            normalized = (normalized * 10 + ord(digit) - ord("0")) % 26
+        return -normalized if value.startswith("-") else normalized
     if type(value) is not int:
         raise InvalidKeyError()
     return value
+
+
+def decode_text_request(raw: bytes, content_type: str | None) -> TextCipherRequest:
+    """Decode a JSON object while retaining unbounded integer tokens safely."""
+
+    media_type = content_type.partition(";")[0].strip().lower() if content_type else ""
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise InvalidRequestBodyError()
+
+    try:
+        decoded = json.loads(raw, parse_int=JsonIntegerToken)
+        if type(decoded) is not dict:
+            raise InvalidRequestBodyError()
+        return TextCipherRequest.model_validate(decoded)
+    except InvalidRequestBodyError:
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
+        raise InvalidRequestBodyError() from exc
 
 
 def parse_multipart_key(value: Any) -> int:

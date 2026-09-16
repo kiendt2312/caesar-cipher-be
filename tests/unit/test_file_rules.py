@@ -154,11 +154,13 @@ def test_build_attachment_body_preserves_input_bom_state(had_bom: bool, expected
         ),
     ],
 )
-def test_build_result_filename(original: str, action: str, expected: str) -> None:
+def test_result_name_uses_dot_suffix_and_preserves_the_original_stem(
+    original: str, action: str, expected: str
+) -> None:
     assert build_result_filename(original, action) == expected
 
 
-def test_build_result_filename_rejects_unknown_action() -> None:
+def test_unknown_action_cannot_produce_a_result_filename() -> None:
     with pytest.raises(ValueError):
         build_result_filename("input.txt", "rotate")
 
@@ -176,7 +178,9 @@ def test_build_result_filename_rejects_unknown_action() -> None:
         pytest.param(None, False, id="missing-name"),
     ],
 )
-def test_has_allowed_extension(filename: str, expected: bool) -> None:
+def test_only_a_final_txt_extension_is_accepted_case_insensitively(
+    filename: str, expected: bool
+) -> None:
     assert has_allowed_extension(filename) is expected
 
 

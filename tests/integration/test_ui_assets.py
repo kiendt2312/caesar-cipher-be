@@ -97,6 +97,7 @@ def test_ui_has_no_out_of_scope_navigation_or_mock_notes() -> None:
 def test_ui_supports_whitespace_plus_keys_download_and_full_locking() -> None:
     assert "if (text.length === 0)" in SCRIPT
     assert "^[+-]?[0-9]+$" in SCRIPT
+    assert '(state.inputType === "file" && raw.length > 32)' in SCRIPT
     assert "ket-qua.encrypted.txt" in SCRIPT
     assert "ket-qua.decrypted.txt" in SCRIPT
     assert 'querySelectorAll("[data-lockable]")' in SCRIPT
@@ -140,3 +141,22 @@ def test_ui_preserves_exact_result_and_clears_stale_download_success() -> None:
     assert "return `${result}\\n`;" not in colorize
     assert "clearResult({ keepNotice: true });" in download
     assert 'setStatus(elements.outputStatus, "Tải kết quả thất bại", "error")' in download
+
+
+def test_shift_table_highlights_only_ascii_letters_from_the_original_input() -> None:
+    shift_table = SCRIPT.split("function renderShiftTable", 1)[1].split("function formatSize", 1)[0]
+
+    assert "/^[A-Za-z]$/.test(letter)" in shift_table
+    assert "currentInputText().toUpperCase()" not in shift_table
+
+
+def test_file_download_names_come_only_from_content_disposition() -> None:
+    filename_parser = SCRIPT.split("function filenameFromDisposition", 1)[1].split(
+        "function saveBlob", 1
+    )[0]
+    download = SCRIPT.split("async function downloadResult", 1)[1].split("function resetAll", 1)[0]
+
+    assert "return quotedMatch" in filename_parser
+    assert ": null;" in filename_parser
+    assert "textResultFilename()" in download
+    assert "filenameFromDisposition(response.disposition)" in download

@@ -127,7 +127,7 @@ function parseKey() {
   if (raw === "") {
     return { valid: false, missing: true, raw };
   }
-  if (raw.length > 32 || !KEY_PATTERN.test(raw)) {
+  if ((state.inputType === "file" && raw.length > 32) || !KEY_PATTERN.test(raw)) {
     return { valid: false, missing: false, raw };
   }
   try {
@@ -164,7 +164,11 @@ for (const letter of ALPHABET) {
 function renderShiftTable() {
   const key = normalizedKey() ?? 0;
   const shifted = shiftAlphabet(key, state.mode);
-  const used = new Set([...currentInputText().toUpperCase()].filter((letter) => ALPHABET.includes(letter)));
+  const used = new Set(
+    [...currentInputText()]
+      .filter((letter) => /^[A-Za-z]$/.test(letter))
+      .map((letter) => letter.toUpperCase()),
+  );
   for (let index = 0; index < ALPHABET.length; index += 1) {
     shiftedCells[index].textContent = shifted[index];
     sourceCells[index].classList.toggle("used", used.has(ALPHABET[index]));
@@ -464,12 +468,8 @@ const realApi = {
   },
 };
 
-function resultFilename() {
-  if (state.inputType === "text") {
-    return state.mode === "encrypt" ? "ket-qua.encrypted.txt" : "ket-qua.decrypted.txt";
-  }
-  const stem = state.file.name.replace(/\.txt$/i, "");
-  return `${stem}.${state.mode === "encrypt" ? "encrypted" : "decrypted"}.txt`;
+function textResultFilename() {
+  return state.mode === "encrypt" ? "ket-qua.encrypted.txt" : "ket-qua.decrypted.txt";
 }
 
 function filenameFromDisposition(disposition) {
@@ -478,11 +478,11 @@ function filenameFromDisposition(disposition) {
     try {
       return decodeURIComponent(utf8Match[1]);
     } catch (error) {
-      return resultFilename();
+      // Continue to the server-provided ASCII fallback below.
     }
   }
   const quotedMatch = disposition.match(/filename="((?:\\.|[^"])*)"/i);
-  return quotedMatch ? quotedMatch[1].replace(/\\([\\"])/g, "$1") : resultFilename();
+  return quotedMatch ? quotedMatch[1].replace(/\\([\\"])/g, "$1") : null;
 }
 
 function saveBlob(blob, filename) {
@@ -540,6 +540,7 @@ async function downloadResult() {
   state.loading = true;
   render();
   try {
+    let filename;
     if (state.inputType === "file") {
       const response = await realApi.file(
         state.mode,
@@ -547,11 +548,18 @@ async function downloadResult() {
         elements.keyInput.value.trim(),
         "file",
       );
-      saveBlob(response.blob, filenameFromDisposition(response.disposition));
+      filename = filenameFromDisposition(response.disposition);
+      if (filename === null) {
+        const error = new Error(MESSAGES.system);
+        error.isApiError = true;
+        throw error;
+      }
+      saveBlob(response.blob, filename);
     } else {
-      saveBlob(new Blob([state.result], { type: "text/plain;charset=utf-8" }), resultFilename());
+      filename = textResultFilename();
+      saveBlob(new Blob([state.result], { type: "text/plain;charset=utf-8" }), filename);
     }
-    showNotice("success", "Đã tạo file tải xuống", resultFilename());
+    showNotice("success", "Đã tạo file tải xuống", filename);
   } catch (error) {
     clearResult({ keepNotice: true });
     const message = error.isApiError ? error.message : "Không thể tải kết quả. Vui lòng thử lại.";

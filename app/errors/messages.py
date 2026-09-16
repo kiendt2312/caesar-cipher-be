@@ -21,6 +21,12 @@ INVALID_REQUEST_BODY = "Dữ liệu gửi lên không hợp lệ."
 # Owner-approved infrastructure exception; not a canonical DOCX §5 business message.
 REQUEST_TOO_LARGE = "Yêu cầu vượt quá dung lượng cho phép."
 
+# OpenAPI descriptions are user-visible through /docs and remain Vietnamese here.
+FILE_API_SUCCESS_DESCRIPTION = "Kết quả JSON xem trước hoặc file văn bản UTF-8 đính kèm."
+FILE_API_UNSUPPORTED_DESCRIPTION = "Loại file hoặc bảng mã không được hỗ trợ."
+FILE_API_INVALID_MULTIPART_DESCRIPTION = "Dữ liệu multipart không hợp lệ."
+FILE_API_UPLOAD_DESCRIPTION = "File .txt sử dụng UTF-8."
+
 CANONICAL_MESSAGES = (
     TEXT_EMPTY,
     MISSING_KEY,

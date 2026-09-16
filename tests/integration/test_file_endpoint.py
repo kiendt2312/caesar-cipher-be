@@ -134,13 +134,12 @@ def test_file_api_scenario_inventory_is_complete() -> None:
 
 
 def test_file_endpoint_openapi_describes_both_success_modes(client: TestClient) -> None:
-    operation = client.get("/openapi.json").json()["paths"][FILE_PATH]["post"]
+    openapi = client.get("/openapi.json").json()
+    operation = openapi["paths"][FILE_PATH]["post"]
     request_schema_ref = operation["requestBody"]["content"]["multipart/form-data"]["schema"][
         "$ref"
     ]
-    request_schema = client.get("/openapi.json").json()["components"]["schemas"][
-        request_schema_ref.rsplit("/", 1)[-1]
-    ]
+    request_schema = openapi["components"]["schemas"][request_schema_ref.rsplit("/", 1)[-1]]
 
     assert set(operation["responses"]["200"]["content"]) == {
         "application/json",
@@ -148,6 +147,15 @@ def test_file_endpoint_openapi_describes_both_success_modes(client: TestClient) 
     }
     assert request_schema["properties"]["response_mode"]["default"] == "content"
     assert set(operation["responses"]["422"]["content"]) == {"application/json"}
+    assert operation["responses"]["200"]["description"] == messages.FILE_API_SUCCESS_DESCRIPTION
+    assert operation["responses"]["415"]["description"] == messages.FILE_API_UNSUPPORTED_DESCRIPTION
+    assert (
+        operation["responses"]["422"]["description"]
+        == messages.FILE_API_INVALID_MULTIPART_DESCRIPTION
+    )
+    assert (
+        request_schema["properties"]["file"]["description"] == messages.FILE_API_UPLOAD_DESCRIPTION
+    )
 
 
 def test_malformed_multipart_body_uses_canonical_unreadable_body_contract(

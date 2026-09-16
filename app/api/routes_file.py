@@ -40,7 +40,7 @@ _ERROR_CONTENT = {
     response_class=Response,
     responses={
         200: {
-            "description": "JSON preview or UTF-8 text attachment.",
+            "description": messages.FILE_API_SUCCESS_DESCRIPTION,
             "content": {
                 "application/json": {"schema": _SUCCESS_CONTENT},
                 "text/plain": {"schema": {"type": "string", "format": "binary"}},
@@ -51,11 +51,11 @@ _ERROR_CONTENT = {
             "content": {"application/json": {"schema": _ERROR_CONTENT}},
         },
         415: {
-            "description": "Unsupported file type or encoding.",
+            "description": messages.FILE_API_UNSUPPORTED_DESCRIPTION,
             "content": {"application/json": {"schema": _ERROR_CONTENT}},
         },
         422: {
-            "description": "Invalid multipart input.",
+            "description": messages.FILE_API_INVALID_MULTIPART_DESCRIPTION,
             "content": {"application/json": {"schema": _ERROR_CONTENT}},
         },
         500: {
@@ -67,7 +67,9 @@ _ERROR_CONTENT = {
 async def process_file(
     request: Request,
     # Keep metadata validation before this first read to preserve error precedence.
-    file: Annotated[UploadFile | None, File(description="UTF-8 .txt file")] = None,
+    file: Annotated[
+        UploadFile | None, File(description=messages.FILE_API_UPLOAD_DESCRIPTION)
+    ] = None,
     key: Annotated[str | None, Form()] = None,
     action: Annotated[str | None, Form()] = None,
     response_mode: Annotated[str | None, Form()] = "content",

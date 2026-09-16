@@ -125,6 +125,26 @@ def test_valid_text_requests(
     _assert_success(response, expected)
 
 
+@pytest.mark.parametrize("sign", ["", "-"])
+def test_text_api_accepts_json_integer_beyond_python_conversion_ceiling(
+    client: TestClient, sign: str
+) -> None:
+    digits = "1" + "0" * 4300
+    normalized = pow(10, 4300, 26)
+    if sign:
+        normalized = -normalized
+    expected = chr(ord("A") + normalized % 26)
+    raw = f'{{"text":"A","key":{sign}{digits}}}'
+
+    response = client.post(
+        ENCRYPT_PATH,
+        content=raw,
+        headers={"content-type": "application/json"},
+    )
+
+    _assert_success(response, expected)
+
+
 # Scenario 03: repeated identical requests do not share mutable state.
 def test_repeated_encryption_is_stable(client: TestClient) -> None:
     payload = {"text": "Hello World", "key": 3}

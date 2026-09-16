@@ -201,7 +201,14 @@ Trường `key` SHALL bắt buộc có mặt và có giá trị trong request bo
 
 ### Requirement: Thứ tự ưu tiên kiểm tra khi có nhiều lỗi
 
-Khi một request vi phạm đồng thời nhiều quy tắc validate, hệ thống SHALL trả về đúng một thông báo lỗi và MUST tuân theo thứ tự kiểm tra xác định đã quy định trong capability `error-handling`; hai endpoint văn bản MUST NOT định nghĩa một thứ tự riêng. Áp dụng vào luồng JSON, thứ tự đó có nghĩa là: thân yêu cầu phải đọc được thành một object trước, rồi tới sự hiện diện của `text`, rồi sự hiện diện của `key`, rồi định dạng của `key`. Nhờ vậy phản hồi cho một body cho trước luôn xác định được trước. (Truy vết: docx §5)
+Khi một request vi phạm đồng thời nhiều quy tắc validate, hệ thống SHALL trả về đúng một thông báo lỗi và MUST tuân theo thứ tự kiểm tra xác định đã quy định trong capability `error-handling`; hai endpoint văn bản MUST NOT định nghĩa một thứ tự riêng. Ngoại lệ hạ tầng duy nhất là request có `Content-Length` lớn hơn 64 MiB: tầng 0 SHALL từ chối trước khi đọc body với HTTP 413 và thông báo generic. Với mọi request không bị tầng 0 từ chối, thứ tự luồng JSON là: thân yêu cầu phải đọc được thành một object trước, rồi tới sự hiện diện của `text`, rồi sự hiện diện của `key`, rồi định dạng của `key`. Nhờ vậy phản hồi cho một request cho trước luôn xác định được. (Truy vết: docx §5; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
+
+#### Scenario: Request văn bản vượt trần hạ tầng
+
+- **WHEN** client gửi request tới một trong hai endpoint văn bản với `Content-Length` lớn hơn 64 MiB, đồng thời body cũng sai cú pháp hoặc sai field
+- **THEN** tầng 0 trả HTTP 413 trước khi phân tích body
+- **AND** body phản hồi là `{"success": false, "message": "Yêu cầu vượt quá dung lượng cho phép."}`
+- **AND** thông báo không nêu con số 64 MiB
 
 #### Scenario: Text rỗng và thiếu key cùng lúc
 - **WHEN** client gửi `POST /api/caesar/encrypt` với body `{"text": ""}`
@@ -256,7 +263,7 @@ Hai endpoint văn bản SHALL truyền tải văn bản Unicode nguyên vẹn: k
 
 ### Requirement: Body không đọc được vẫn trả error response chuẩn
 
-Khi body của request không parse được thành JSON object hợp lệ — body không phải JSON, JSON sai cú pháp, body rỗng, hoặc JSON hợp lệ nhưng không phải object — hai endpoint văn bản SHALL trả HTTP 422 với body `{"success": false, "message": "Dữ liệu gửi lên không hợp lệ."}`. Phản hồi MUST NOT dùng khuôn dạng lỗi mặc định của framework (ví dụ body chứa trường `detail`) và MUST NOT lộ stack trace, tên trường kỹ thuật hay thông điệp tiếng Anh. Chuỗi `Dữ liệu gửi lên không hợp lệ.` là phần bổ sung ngoài bảng lỗi docx §5 và được định nghĩa trong capability `error-handling`, nơi cũng ghi nhận việc cần cập nhật ngược chuỗi này vào tài liệu gốc. (Truy vết: docx §5, §6 — bổ sung ngoài bảng)
+Khi request không bị tầng 0 từ chối vì vượt trần hạ tầng và body không parse được thành JSON object hợp lệ — body không phải JSON, JSON sai cú pháp, body rỗng, hoặc JSON hợp lệ nhưng không phải object — hai endpoint văn bản SHALL trả HTTP 422 với body `{"success": false, "message": "Dữ liệu gửi lên không hợp lệ."}`. Phản hồi MUST NOT dùng khuôn dạng lỗi mặc định của framework (ví dụ body chứa trường `detail`) và MUST NOT lộ stack trace, tên trường kỹ thuật hay thông điệp tiếng Anh. Chuỗi `Dữ liệu gửi lên không hợp lệ.` là phần bổ sung ngoài bảng lỗi docx §5 và được định nghĩa trong capability `error-handling`, nơi cũng ghi nhận việc cần cập nhật ngược chuỗi này vào tài liệu gốc. (Truy vết: docx §5, §6 — bổ sung ngoài bảng; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Body không phải JSON
 - **WHEN** client gửi `POST /api/caesar/encrypt` với `Content-Type: application/json` và body `not json at all`

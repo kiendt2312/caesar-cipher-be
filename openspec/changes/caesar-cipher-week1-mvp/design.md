@@ -186,12 +186,22 @@ lúc bị từ chối.
 
 **Quyết định — phòng thủ hai tầng.**
 
-*Tầng 0 — trần lạm dụng (chỉ để chống cạn tài nguyên, KHÔNG phải nguồn chân lý).* Một dependency/middleware
-đọc header `Content-Length`; nếu có và vượt `MAX_REQUEST_BYTES = 64 MiB` thì trả 413 ngay, không đọc
-body. Đặt trần cao hơn hẳn 5 MiB là có chủ ý: mọi payload ở quy mô thực tế (kể cả file 10 MiB trong ví
-dụ ở Quyết định 9) vẫn đi tới handler để nhận đúng thông báo theo thứ tự đã chốt; chỉ payload ở quy mô
-rõ ràng lạm dụng mới bị chặn sớm. `Content-Length` do client khai và có thể vắng mặt (chunked
-transfer-encoding), nên tầng này **không bao giờ** được dùng để quyết định ranh giới 5 MiB.
+*Tầng 0 — ngoại lệ hạ tầng chống cạn tài nguyên, được chủ sở hữu phê duyệt (KHÔNG phải nguồn chân lý
+nghiệp vụ).* Một dependency/middleware đọc header `Content-Length`; nếu có, parse được và vượt
+`MAX_REQUEST_BYTES = 64 MiB` thì trả 413 ngay, không đọc body. Phân loại phản hồi **theo tuyến**, không
+theo `Content-Type`: request tới `/api/caesar/file` dùng 413 + chuỗi nghiệp vụ file hiện có
+`"File vượt quá dung lượng tối đa 5 MB."`; mọi tuyến khác dùng 413 + chuỗi hạ tầng
+`"Yêu cầu vượt quá dung lượng cho phép."`. Cả hai dùng đúng envelope `success`/`message`, không thêm
+machine-readable code; chuỗi generic cố ý không công khai con số 64 MiB. Chuỗi hạ tầng này không phải
+thông báo nghiệp vụ thứ 14 của docx §5, và chỉ được định nghĩa trong OpenSpec/code thực thi — không sửa
+hay diễn giải lại docx hoặc bản trích của nó.
+
+Đặt trần cao hơn hẳn 5 MiB là có chủ ý: mọi payload ở quy mô thực tế (kể cả file 10 MiB trong ví dụ ở
+Quyết định 9) vẫn đi tới handler để nhận đúng thông báo theo thứ tự đã chốt; chỉ payload ở quy mô rõ
+ràng lạm dụng mới bị chặn sớm. `Content-Length` do client khai và có thể vắng mặt hoặc sai định dạng
+(ví dụ chunked transfer-encoding), nên request như vậy đi tiếp; tầng này **không bao giờ** được dùng để
+quyết định ranh giới file 5 MiB. Ngưỡng đúng 64 MiB cũng đi tiếp, chỉ `>` mới bị chặn. Hành vi và phản
+hồi của tầng này phải giống nhau giữa local và container.
 
 *Tầng 1 — nguồn chân lý.* Trong handler, đọc `UploadFile` theo chunk 64 KiB, cộng dồn vào `bytearray`,
 và dừng ngay khi tổng vượt ngưỡng:
@@ -321,6 +331,12 @@ hoặc multipart méo) chắc chắn xảy ra trong thực tế và không thể
 "Ánh xạ lỗi HTTP 422 cho thân yêu cầu không đọc được" trong `specs/error-handling/`. Về mặt code, nó
 nằm trong `app/errors/messages.py` để giữ đúng một nguồn sự thật cho toàn bộ 13 thông báo.
 
+**Chuỗi `"Yêu cầu vượt quá dung lượng cho phép."` là ngoại lệ hạ tầng, không phải dòng thứ 14 của
+docx §5.** `app/errors/messages.py` giữ chuỗi này bên cạnh 13 chuỗi nghiệp vụ để code vẫn có một nguồn
+sự thật, nhưng test và tài liệu phải phân biệt rõ hai tập. Request-size guard chọn giữa chuỗi file và
+chuỗi generic theo tuyến như Quyết định 4, rồi trả cùng envelope hai trường; không sửa primary DOCX
+hay `docs/reference/be-scope-v1.0.md` để hợp thức hóa quyết định hạ tầng này.
+
 **Đảm bảo lỗi vẫn là JSON ngay cả khi `response_mode=file`.** Hai cơ chế cộng lại:
 
 1. Exception handler được đăng ký ở **tầng ứng dụng**, nên nó chặn bất kể endpoint nào ném lỗi và bất kể
@@ -445,15 +461,21 @@ nhiều điều kiện cùng sai. Một file `.pdf` nặng 10 MiB gửi kèm mà
 bảng cùng lúc (415, 413, 422). Nếu không chốt thứ tự, thông báo trả về sẽ phụ thuộc vào thứ tự viết
 code — nghĩa là test sẽ giòn và hành vi sẽ đổi sau mỗi lần refactor.
 
-**Quyết định — thứ tự kiểm tra cố định, dừng ở lỗi ĐẦU TIÊN gặp phải.** Đây là thứ tự đã chốt cho toàn
-dự án (và đã được ghi thành requirement "Thứ tự kiểm tra xác định khi nhiều lỗi xảy ra cùng lúc" trong
-`specs/error-handling/`); mọi endpoint phải tuân theo:
+**Quyết định — tầng 0 trước, rồi thứ tự validation cố định và dừng ở lỗi ĐẦU TIÊN gặp phải.** Đây là
+thứ tự đã chốt cho toàn dự án (và đã được ghi thành requirement "Thứ tự kiểm tra xác định khi nhiều
+lỗi xảy ra cùng lúc" trong `specs/error-handling/`); mọi endpoint phải tuân theo:
 
-**Tiền đề — bước 0: thân yêu cầu phải đọc được trước đã.** Sáu bước dưới đây chỉ có nghĩa khi body đã
-được phân tích thành công. Nếu body không đọc được — JSON hỏng cú pháp, body không phải JSON object,
-`Content-Type` sai, multipart méo — thì **không** trường nào tồn tại để kiểm tra, nên hệ thống trả ngay
-422 `"Dữ liệu gửi lên không hợp lệ."` và **không** đi vào thứ tự này. Đây là điều kiện tiên quyết, không
-phải một mục trong danh sách ưu tiên.
+**Ngoại lệ hạ tầng — bước âm 1.** Nếu `Content-Length > 64 MiB`, tầng 0 từ chối trước khi đọc body.
+Thông báo được chọn theo **tuyến**: API file dùng `"File vượt quá dung lượng tối đa 5 MB."`, tuyến khác
+dùng `"Yêu cầu vượt quá dung lượng cho phép."`. Đây là trường hợp duy nhất được phép thắng lỗi body
+hoặc field; nó bảo vệ tài nguyên trước khi có thể áp dụng hợp đồng validation. Nếu header bằng hoặc
+nhỏ hơn ngưỡng, vắng mặt hay không parse được, request đi tiếp và tầng 0 không ảnh hưởng thứ tự dưới.
+
+**Tiền đề — bước 0: với request đã qua tầng 0, thân yêu cầu phải đọc được trước đã.** Sáu bước dưới đây
+chỉ có nghĩa khi body đã được phân tích thành công. Nếu body không đọc được — JSON hỏng cú pháp, body
+không phải JSON object, `Content-Type` sai, multipart méo — thì **không** trường nào tồn tại để kiểm
+tra, nên hệ thống trả ngay 422 `"Dữ liệu gửi lên không hợp lệ."` và **không** đi vào thứ tự này. Đây là
+điều kiện tiên quyết, không phải một mục trong danh sách ưu tiên.
 
 | # | Bước | Ví dụ thông báo | Chi phí |
 |---|---|---|---|
@@ -467,7 +489,8 @@ phải một mục trong danh sách ưu tiên.
 **Trả lời ví dụ trong đề bài.** File `.pdf` 10 MiB thiếu luôn `key` → **422 `"Thiếu khóa."`** Bước 1
 (sự hiện diện của trường) đứng trước bước 3 (đuôi file) và bước 4 (dung lượng), nên chặn ngay tại đó.
 Một request 10 MiB vẫn nằm dưới trần lạm dụng 64 MiB ở Quyết định 4, nên nó đi tới handler và nhận đúng
-thông báo này thay vì bị Tầng 0 chặn sớm — hai quyết định khớp nhau đúng như thiết kế.
+thông báo này thay vì bị Tầng 0 chặn sớm. Ngược lại, request 65 MiB thiếu `key` bị tầng 0 chặn trước;
+API file nhận chuỗi file, còn API text nhận chuỗi generic — hai quyết định khớp nhau đúng như thiết kế.
 
 **Lý do — rẻ trước, đắt sau.** Bước 1–3 chỉ nhìn metadata (tên trường, tên file) và không chạm một byte
 nội dung nào; bước 6 phải quét toàn bộ 5 MiB. Kiểm tra theo thứ tự chi phí tăng dần nghĩa là request
@@ -546,6 +569,14 @@ hàm nhỏ `shiftAlphabet(k)` phục vụ riêng phần hiển thị bảng, đ�
 thật luôn luôn đến từ server. Ranh giới này cần một comment trong `app.js`, vì nó dễ bị hiểu nhầm thành
 "vẫn còn code mock".
 
+**Kỷ luật state của output.** `state.result` phải giữ đúng chuỗi server trả về; lớp tô màu dựng DOM mà
+không thêm newline, và copy/download cũng dùng nguyên chuỗi đó. Mọi thất bại của request xử lý hoặc
+request tải file phải xóa result/analysis thành công cũ, vô hiệu action phụ thuộc result và đặt status
+kết quả sang lỗi. `clearResult()` luôn đặt `state.view = "result"`, render placeholder của tab
+"Văn bản", ẩn/xóa "Phân tích" và đồng bộ `aria-selected`. Khi `state.loading` là true, guard dùng chung
+phải chặn cả phím tắt lẫn click/Enter/Space/file-drop của custom drop zone; thuộc tính `disabled` trên
+`div` không được xem là đủ.
+
 **Phục vụ qua FastAPI.** `app.mount("/static", StaticFiles(directory="app/static"), name="static")` cho
 tài sản tĩnh; `GET /` trả `TemplateResponse("index.html", {...})` qua `Jinja2Templates`. Cùng một
 tiến trình, cùng origin, nên `/docs` của FastAPI vẫn giữ mặc định và không cần CORS (docx §8).
@@ -586,15 +617,24 @@ tiến trình, cùng origin, nên `/docs` của FastAPI vẫn giữ mặc địn
   6 MiB + thiếu key → `"Thiếu khóa."`), test body JSON hỏng → `"Dữ liệu gửi lên không hợp lệ."`, và
   test khẳng định **không** response lỗi nào chứa khóa `"detail"` — lưới an toàn chống việc khuôn dạng
   mặc định của FastAPI lọt ra ngoài.
-- `test_app_runtime.py`: `GET /` trả 200 HTML; `GET /docs` trả 200; `GET /static/app.js` trả 200.
+- Test request-size guard: phủ ranh `64 MiB`/`64 MiB + 1`, header vắng/sai định dạng, route file so với
+  route không phải file, envelope không có code, thông báo generic không lộ `64 MiB`, và xác nhận tầng
+  0 thắng body/field validation chỉ khi vượt trần. Chạy cùng tập kỳ vọng với app local và container.
+- `test_app_runtime.py`: `GET /` trả 200 HTML; `GET /docs` trả 200; `GET /static/app.js` trả 200; hành vi
+  tầng 0 giống nhau giữa local và container.
 
-*UI — không có E2E bằng trình duyệt ở Tuần 1.* Playwright/Selenium kéo theo trình duyệt trong image và
-một tầng hạ tầng test mà docx §8 không yêu cầu. Thay vào đó dùng hai lớp rẻ mà bắt đúng thứ dễ sai nhất:
+*UI — test guard tự động cộng nghiệm thu native Browser ngoài image.* Không đưa Playwright/Selenium vào
+dependency hay image Tuần 1. Dùng test guard rẻ cho hồi quy tĩnh, rồi chạy native Browser trên app thật
+trước khi chấp nhận remediation:
 1. Test HTTP khẳng định trang `/` render và có chứa giá trị `5242880` do server tiêm.
 2. **Test guard đọc thẳng nội dung `app/static/app.js`** và khẳng định nó **không** chứa `USE_MOCK`,
    `http://localhost:8080`, `_encrypted`, `1024 * 1024`, và **có** chứa `response_mode`. Đây là 5 trong
    6 điểm sửa bắt buộc, được khóa lại bằng năm dòng assert. Thô sơ, nhưng bắt đúng loại hồi quy có xác
    suất cao nhất (ai đó copy lại đoạn mockup cũ) với chi phí gần bằng 0.
+3. Native Browser phải chứng minh kết quả hiển thị/copy/download đúng từng ký tự, không thêm newline;
+   lỗi tải file xóa success cũ và chuyển trạng thái lỗi; Analysis → Xóa đặt lại view, nội dung hiển thị
+   và ARIA tab selection; trong request cố ý trì hoãn, phím tắt, click/Enter/Space vùng thả và file drop
+   thực tế đều bị khóa. Sau đó chạy lại hai luồng docx §3.1/§3.2 và kiểm console sạch.
 
 **Tạo file 5 MiB trong test mà không commit file lớn.** Sinh trong bộ nhớ ngay tại thời điểm chạy, không
 bao giờ để lên đĩa hay vào git:
@@ -607,8 +647,10 @@ too_big = io.BytesIO(b"A" * (LIMIT + 1))  # 5242881 -> phải bị từ chối
 
 `b"A" * 5242880` mất chưa tới một mili giây và tốn ~5 MB RAM trong chốc lát. Hai fixture ở
 `tests/conftest.py` gói hai giá trị này để cả hai test biên dùng chung **đúng một hằng số** — nếu ngưỡng
-đổi, chỉ có một nơi phải sửa. `.gitignore` chặn `*.txt` sinh ra trong `tmp_path`, còn bản thân `tmp_path`
-của pytest đã nằm ngoài repo.
+đổi, chỉ có một nơi phải sửa. `tmp_path` của pytest nằm ngoài repo nên test không cần và không được dựa
+vào quy tắc ignore `*.txt`. Ứng dụng xử lý upload/download trong bộ nhớ hoặc response HTTP, không tạo
+file `.txt` trong repo lúc chạy. `.gitignore` chỉ chặn hai dạng output người dùng có thể vô tình tải
+vào root repo: `/*.encrypted.txt` và `/*.decrypted.txt`; không thêm runtime directory.
 
 **Mục tiêu và phạm vi đo coverage.** `--cov=app --cov-fail-under=90 --cov-report=term-missing`. Coverage
 đo **chỉ mã Python trong `app/`**. `app/static/*.js` và `app/templates/*.html` **không** được tính vào
@@ -677,7 +719,7 @@ caesar_cipher-be/
 ├── README.md                                           [mới] cách chạy local/Docker, chạy test, lint
 ├── pyproject.toml                                      [mới] deps + cấu hình Ruff + pytest + coverage
 ├── uv.lock                                             [sinh] uv sinh; PHẢI commit để build tất định
-├── .gitignore                                          [mới] .venv/, __pycache__/, .pytest_cache/, .coverage, htmlcov/
+├── .gitignore                                          [mới] cache/tooling + /*.encrypted.txt, /*.decrypted.txt
 ├── .dockerignore                                       [mới] .git/, .venv/, tests/, openspec/, *.docx, mockup
 ├── Dockerfile                                          [mới] multi-stage; xem Quyết định 12
 │
@@ -715,7 +757,7 @@ caesar_cipher-be/
 │   │   └── routes_file.py                              [mới] POST /api/caesar/file
 │   ├── errors/
 │   │   ├── __init__.py                                 [mới]
-│   │   ├── messages.py                                 [mới] 13 chuỗi docx §5
+│   │   ├── messages.py                                 [mới] 13 chuỗi docx §5 + 1 chuỗi ngoại lệ hạ tầng OpenSpec
 │   │   ├── exceptions.py                               [mới] CaesarError và các lớp con
 │   │   └── handlers.py                                 [mới] 4 exception handler (tầng duy nhất biết HTTP)
 │   ├── templates/
@@ -756,7 +798,7 @@ duy nhất thì không có chuyện hai nơi nói hai điều khác nhau.
 | `app/api/routes_text.py` | Chuyển request JSON thành lời gọi core và trả success response. | HTTP Adapter | `text-cipher-api` |
 | `app/api/routes_file.py` | Chuyển request multipart thành lời gọi service+core, trả JSON hoặc attachment theo `response_mode`. | HTTP Adapter | `file-cipher-api` |
 | `app/api/schemas.py` | Định nghĩa hợp đồng request/response và áp thứ tự validate ở Quyết định 9. | HTTP Adapter | `text-cipher-api`, `file-cipher-api` |
-| `app/errors/messages.py` | Giữ nguyên văn 13 chuỗi docx §5 ở đúng một nơi duy nhất. | Exception Handling | `error-handling` |
+| `app/errors/messages.py` | Giữ nguyên văn 13 chuỗi nghiệp vụ docx §5 và chuỗi generic của ngoại lệ hạ tầng OpenSpec ở một nơi, phân biệt rõ hai tập. | Exception Handling | `error-handling` |
 | `app/errors/exceptions.py` | Định nghĩa `CaesarError` mang cặp `(status_code, message)` cho tầng dưới ném lên. | Exception Handling | `error-handling` |
 | `app/errors/handlers.py` | Chuyển mọi exception thành error response chuẩn và ghi log nội bộ. | Exception Handling | `error-handling` |
 | `app/templates/index.html` | Khung giao diện, nhận hằng số cấu hình do server tiêm. | Web UI | `web-ui` |
@@ -919,11 +961,29 @@ thời gian (ví dụ một bên chấp nhận `"3.0"`, bên kia không). Giảm
 `app/api/schemas.py`, và bảng ở Quyết định 8 được dùng làm tham số cho test ở **cả hai** endpoint, kèm
 một test khẳng định `3.0` bị từ chối ở cả hai nơi.
 
-**[Trần lạm dụng 64 MiB ở Tầng 0 là con số chọn tay]** → Đặt cao để thứ tự kiểm tra ở Quyết định 9 chi
-phối mọi trường hợp thực tế, đổi lại một payload 60 MiB vẫn được nạp (tràn ra đĩa) trước khi bị từ chối.
-Giảm thiểu: trần là hằng số ở `app/config.py` chứ không rải rác trong code, nên hạ xuống là sửa một
-dòng; và nếu triển khai ra ngoài môi trường học tập thì reverse proxy phía trước mới là nơi đúng để
-chặn body quá khổ.
+**[Trần lạm dụng 64 MiB ở Tầng 0 là con số chọn tay và nằm ngoài DOCX]** → Đây là ngoại lệ hạ tầng
+OpenSpec đã được chủ sở hữu phê duyệt, không phải giới hạn nghiệp vụ mới: primary DOCX và bản trích giữ
+nguyên. Đặt cao để thứ tự kiểm tra ở Quyết định 9 chi phối mọi trường hợp thực tế, đổi lại một payload
+60 MiB vẫn được nạp (tràn ra đĩa) trước khi bị từ chối. Giảm thiểu: trần là hằng số ở `app/config.py`
+chứ không rải rác trong code; route-aware guard trả chuỗi file cho API file và chuỗi generic không lộ
+ngưỡng cho tuyến khác; test local/container khóa hành vi này. Nếu triển khai ra ngoài môi trường học
+tập thì reverse proxy phía trước mới là nơi đúng để chặn body quá khổ.
+
+**[Output tải xuống có thể bị lưu nhầm vào root repo]** → Ứng dụng không tạo `.txt` trong repo lúc
+runtime và pytest dùng `tmp_path` ngoài repo, nên ignore toàn cục `*.txt` vừa sai lý do vừa có thể che
+fixture/tài liệu hợp lệ. Chỉ ignore hai pattern root-level do công cụ này sinh ra:
+`/*.encrypted.txt` và `/*.decrypted.txt`; không tạo runtime directory mới.
+
+## Deferred technical debt
+
+Ba smell sau được ghi nhận bền vững nhưng được chủ sở hữu chấp thuận **defer, không chặn remediation**:
+
+1. Logic lọc/đọc header bị lặp giữa `_content_length` và `_header` trong request-size guard.
+2. Các phép gán trạng thái disabled bị lặp quanh vòng khóa control tổng quát trong `app.js`.
+3. Nhánh `state.mode === "encrypt"` lặp lại ở render, analysis, dispatch API và đặt tên file.
+
+Chỉ refactor các điểm này trong một change riêng khi có lợi ích đo được; remediation hiện tại không mở
+rộng phạm vi sang cleanup không bắt buộc.
 
 ## Migration Plan
 

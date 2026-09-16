@@ -41,6 +41,7 @@ def test_script_has_no_mock_cross_origin_or_embedded_business_limit() -> None:
         "USE_MOCK",
         "API_BASE",
         "localhost:8080",
+        "_encrypted",
         str(config.MAX_FILE_BYTES),
         "1024 * 1024;",
         "1 MB",
@@ -53,6 +54,7 @@ def test_script_has_no_mock_cross_origin_or_embedded_business_limit() -> None:
 
 def test_only_shift_table_contains_client_side_caesar_mapping() -> None:
     assert "function shiftAlphabet" in SCRIPT
+    assert "Display-only mapping for the alphabet table" in SCRIPT
     assert "charCodeAt" in SCRIPT  # Highlighting and analysis only.
     assert "String.fromCharCode" not in SCRIPT
     assert ".encrypt(" not in SCRIPT
@@ -81,7 +83,7 @@ def test_ui_keeps_required_controls_and_vietnamese_labels() -> None:
         "Giải mã",
     ):
         assert label in TEMPLATE
-    assert "5 MiB" in TEMPLATE
+    assert "5 MiB = 5.242.880 byte" in TEMPLATE
 
 
 def test_ui_has_no_out_of_scope_navigation_or_mock_notes() -> None:
@@ -128,3 +130,13 @@ def test_ui_resets_result_tab_times_out_requests_and_ignores_stale_file_reads() 
     assert "controller.abort()" in SCRIPT
     assert "window.clearTimeout(timeout)" in SCRIPT
     assert "fileReadVersion !== state.fileReadVersion || state.file !== file" in SCRIPT
+
+
+def test_ui_preserves_exact_result_and_clears_stale_download_success() -> None:
+    colorize = SCRIPT.split("function colorize", 1)[1].split("function setStatus", 1)[0]
+    download = SCRIPT.split("async function downloadResult", 1)[1].split("function resetAll", 1)[0]
+
+    assert "return result;" in colorize
+    assert "return `${result}\\n`;" not in colorize
+    assert "clearResult({ keepNotice: true });" in download
+    assert 'setStatus(elements.outputStatus, "Tải kết quả thất bại", "error")' in download

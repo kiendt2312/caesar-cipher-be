@@ -22,7 +22,7 @@ Mọi phản hồi thành công trả về dưới dạng JSON của các endpoi
 
 ### Requirement: Khuôn dạng error response thống nhất
 
-Mọi phản hồi lỗi của các endpoint dưới `/api/caesar/` SHALL là JSON có đúng hai trường: `success` bằng `false` và `message` chứa thông báo tiếng Việt dành cho người dùng cuối. Hệ thống MUST NOT trả thêm bất kỳ trường nào khác (ví dụ trường mô tả lỗi mặc định do tầng vận chuyển sinh ra, mã lỗi nội bộ, danh sách lỗi chi tiết theo từng field). Các lỗi được tầng vận chuyển tự động phát hiện trước khi vào logic nghiệp vụ (sai kiểu dữ liệu, thiếu trường bắt buộc, thân yêu cầu không phải JSON hợp lệ) cũng SHALL được chuyển về đúng khuôn dạng này. (Truy vết: docx §5, §6)
+Mọi phản hồi lỗi của các endpoint dưới `/api/caesar/` SHALL là JSON có đúng hai trường: `success` bằng `false` và `message` chứa thông báo tiếng Việt dành cho người dùng cuối. Hệ thống MUST NOT trả thêm bất kỳ trường nào khác (ví dụ trường mô tả lỗi mặc định do tầng vận chuyển sinh ra, machine-readable error code, danh sách lỗi chi tiết theo từng field). Các lỗi được tầng vận chuyển tự động phát hiện trước khi vào logic nghiệp vụ (sai kiểu dữ liệu, thiếu trường bắt buộc, thân yêu cầu không phải JSON hợp lệ, hoặc vượt trần hạ tầng) cũng SHALL được chuyển về đúng khuôn dạng này. Mười ba thông báo trong docx §5 tiếp tục là tập thông báo nghiệp vụ chuẩn; thông báo `Yêu cầu vượt quá dung lượng cho phép.` là ngoại lệ hạ tầng được chủ sở hữu phê duyệt và MUST NOT được coi là thông báo nghiệp vụ thứ 14. (Truy vết: docx §5, §6; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Lỗi nghiệp vụ trả đúng khuôn dạng chuẩn
 
@@ -50,6 +50,23 @@ Khi file tải lên vượt quá giới hạn 5 MiB, hệ thống SHALL trả HT
 
 - **WHEN** người dùng gửi `POST /api/caesar/file` với file có kích thước lớn hơn 5 MiB
 - **THEN** hệ thống trả HTTP 413
+- **AND** thân phản hồi là `{"success": false, "message": "File vượt quá dung lượng tối đa 5 MB."}`
+
+### Requirement: Ánh xạ HTTP 413 cho trần hạ tầng theo tuyến
+
+Khi tầng 0 phát hiện `Content-Length` lớn hơn 64 MiB, hệ thống SHALL trả HTTP 413 trước khi đọc hoặc phân tích thân yêu cầu. Việc chọn thông báo MUST dựa trên tuyến request, không dựa trên `Content-Type`: tuyến API file dùng thông báo file hiện có `File vượt quá dung lượng tối đa 5 MB.`, mọi tuyến khác dùng `Yêu cầu vượt quá dung lượng cho phép.`. Thông báo generic MUST NOT nêu con số 64 MiB và cả hai phản hồi MUST giữ nguyên error envelope hai trường, không có machine-readable error code. Đây là ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt; giới hạn file nghiệp vụ 5 MiB và 13 thông báo docx §5 không thay đổi. (Truy vết: ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt; docx §2.4, §5)
+
+#### Scenario: Request không phải tuyến file vượt 64 MiB
+
+- **WHEN** request tới một tuyến không phải API file có `Content-Length` lớn hơn 64 MiB
+- **THEN** hệ thống trả HTTP 413 trước khi phân tích body
+- **AND** thân phản hồi là `{"success": false, "message": "Yêu cầu vượt quá dung lượng cho phép."}`
+- **AND** thông báo không nêu con số 64 MiB
+
+#### Scenario: Request tới tuyến file vượt 64 MiB
+
+- **WHEN** request tới API file có `Content-Length` lớn hơn 64 MiB
+- **THEN** hệ thống trả HTTP 413 trước khi phân tích multipart
 - **AND** thân phản hồi là `{"success": false, "message": "File vượt quá dung lượng tối đa 5 MB."}`
 
 ### Requirement: Ánh xạ lỗi HTTP 415 cho file không được hỗ trợ
@@ -127,7 +144,7 @@ Khi dữ liệu đầu vào thiếu, rỗng hoặc sai giá trị cho phép, h�
 
 ### Requirement: Ánh xạ lỗi HTTP 422 cho thân yêu cầu không đọc được
 
-Khi thân yêu cầu không parse được thành JSON hợp lệ, hoặc parse được nhưng sai kiểu ở tầng cấu trúc (ví dụ thân là một mảng, một chuỗi hay một số thay vì một JSON object), hệ thống SHALL trả HTTP status 422 kèm thông báo nguyên văn `Dữ liệu gửi lên không hợp lệ.`. Kiểm tra này SHALL diễn ra trước mọi kiểm tra trường, vì khi chưa đọc được thân yêu cầu thì không thể xác định trường nào thiếu hay sai. Đây là thông báo BỔ SUNG nằm ngoài bảng lỗi docx §5: bảng gốc không có dòng nào cho thân yêu cầu hỏng, nên chuỗi này MUST được cập nhật ngược trở lại docx §5 trước khi tài liệu gốc được coi là đầy đủ. (Truy vết: docx §5 — bổ sung ngoài bảng, cần cập nhật ngược tài liệu gốc)
+Khi request không bị tầng 0 từ chối vì vượt trần hạ tầng và thân yêu cầu không parse được thành JSON hợp lệ, hoặc parse được nhưng sai kiểu ở tầng cấu trúc (ví dụ thân là một mảng, một chuỗi hay một số thay vì một JSON object), hệ thống SHALL trả HTTP status 422 kèm thông báo nguyên văn `Dữ liệu gửi lên không hợp lệ.`. Trong phạm vi request đã qua tầng 0, kiểm tra này SHALL diễn ra trước mọi kiểm tra trường, vì khi chưa đọc được thân yêu cầu thì không thể xác định trường nào thiếu hay sai. Đây là thông báo BỔ SUNG nằm ngoài bảng lỗi docx §5: bảng gốc không có dòng nào cho thân yêu cầu hỏng, nên chuỗi này MUST được cập nhật ngược trở lại docx §5 trước khi tài liệu gốc được coi là đầy đủ. (Truy vết: docx §5 — bổ sung ngoài bảng; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Thân yêu cầu không phải JSON
 
@@ -150,7 +167,7 @@ Khi thân yêu cầu không parse được thành JSON hợp lệ, hoặc parse 
 
 ### Requirement: Thứ tự kiểm tra xác định khi nhiều lỗi xảy ra cùng lúc
 
-Khi một yêu cầu vi phạm đồng thời nhiều quy tắc, hệ thống SHALL trả về đúng MỘT thông báo lỗi và MUST dừng ngay ở lỗi đầu tiên gặp phải theo thứ tự kiểm tra bắt buộc dưới đây; đây là hợp đồng chung cho mọi endpoint dưới `/api/caesar/` và các capability khác MUST tham chiếu tới nó thay vì tự phát biểu một thứ tự riêng. Trước toàn bộ danh sách, nếu thân yêu cầu không đọc được thành một object hợp lệ thì hệ thống SHALL trả ngay 422 `Dữ liệu gửi lên không hợp lệ.` và dừng. Sau đó thứ tự bắt buộc là: (1) sự hiện diện của các trường bắt buộc, theo thứ tự `text`/`file` → `key` → `action`; (2) định dạng của các trường vô hướng, theo thứ tự `key` → `action` → `response_mode`; (3) đuôi file `.txt` (415); (4) giới hạn dung lượng 5 MiB (413); (5) file 0 byte (422); (6) giải mã UTF-8 (415). Các bước (3)–(6) MUST chỉ áp dụng cho `POST /api/caesar/file`. Thứ tự này MUST được giữ nguyên vẹn ở cả luồng JSON lẫn luồng file để cùng một yêu cầu sai lệch luôn cho cùng một HTTP status và cùng một thông báo. (Truy vết: docx §5 — docx không quy định thứ tự; đây là quyết định hợp nhất cần cập nhật ngược tài liệu gốc)
+Khi một yêu cầu vi phạm đồng thời nhiều quy tắc, hệ thống SHALL trả về đúng MỘT thông báo lỗi và MUST dừng ngay ở lỗi đầu tiên gặp phải theo thứ tự kiểm tra bắt buộc dưới đây; đây là hợp đồng chung cho mọi endpoint dưới `/api/caesar/` và các capability khác MUST tham chiếu tới nó thay vì tự phát biểu một thứ tự riêng. Tầng 0 là ngoại lệ duy nhất đứng trước hợp đồng validation: nếu `Content-Length` lớn hơn 64 MiB thì hệ thống SHALL trả ngay 413 với thông báo được chọn theo tuyến như requirement về trần hạ tầng. Với mọi request không bị tầng 0 từ chối, nếu thân yêu cầu không đọc được thành một object hợp lệ thì hệ thống SHALL trả ngay 422 `Dữ liệu gửi lên không hợp lệ.` và dừng. Sau đó thứ tự bắt buộc là: (1) sự hiện diện của các trường bắt buộc, theo thứ tự `text`/`file` → `key` → `action`; (2) định dạng của các trường vô hướng, theo thứ tự `key` → `action` → `response_mode`; (3) đuôi file `.txt` (415); (4) giới hạn dung lượng file 5 MiB (413); (5) file 0 byte (422); (6) giải mã UTF-8 (415). Các bước (3)–(6) MUST chỉ áp dụng cho `POST /api/caesar/file`. Thứ tự này MUST được giữ nguyên vẹn ở cả luồng JSON lẫn luồng file để cùng một yêu cầu sai lệch luôn cho cùng một HTTP status và cùng một thông báo. (Truy vết: docx §5 — docx không quy định thứ tự; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Key sai định dạng được báo trước lỗi đuôi file và lỗi dung lượng
 
@@ -208,7 +225,7 @@ Khi hệ thống không đọc được file đã vượt qua bước kiểm tra
 
 ### Requirement: HTTP status phản ánh đúng loại lỗi
 
-Hệ thống SHALL dùng HTTP status khớp với loại lỗi theo bảng ánh xạ: 413 cho vượt dung lượng, 415 cho định dạng/bảng mã không hỗ trợ, 422 cho dữ liệu đầu vào không hợp lệ, 500 cho lỗi phía hệ thống. Hệ thống MUST NOT trả HTTP 200 cho một phản hồi có `success` bằng `false`, và MUST NOT trả HTTP lỗi cho một phản hồi thành công. (Truy vết: docx §5, §7)
+Hệ thống SHALL dùng HTTP status khớp với loại lỗi theo bảng ánh xạ: 413 cho vượt giới hạn file nghiệp vụ hoặc trần request hạ tầng, 415 cho định dạng/bảng mã không hỗ trợ, 422 cho dữ liệu đầu vào không hợp lệ, 500 cho lỗi phía hệ thống. Hệ thống MUST NOT trả HTTP 200 cho một phản hồi có `success` bằng `false`, và MUST NOT trả HTTP lỗi cho một phản hồi thành công. (Truy vết: docx §5, §7; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Không dùng 200 cho phản hồi lỗi
 

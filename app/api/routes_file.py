@@ -96,6 +96,7 @@ async def process_file(
         raise EmptyFileError()
 
     text, had_bom = decode_file_bytes(raw)
+    del raw  # Release the upload buffer before transforming or constructing the response.
     result = transform_text(text, parsed_key, parsed_action)
 
     if parsed_response_mode == "content":

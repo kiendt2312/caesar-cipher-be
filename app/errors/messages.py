@@ -18,6 +18,9 @@ FILE_READ_FAILURE = "Không thể đọc file."
 UNEXPECTED_FAILURE = "Đã xảy ra lỗi hệ thống."
 INVALID_REQUEST_BODY = "Dữ liệu gửi lên không hợp lệ."
 
+# Owner-approved infrastructure exception; not a canonical DOCX §5 business message.
+REQUEST_TOO_LARGE = "Yêu cầu vượt quá dung lượng cho phép."
+
 CANONICAL_MESSAGES = (
     TEXT_EMPTY,
     MISSING_KEY,

@@ -22,11 +22,11 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
-COPY --from=builder /app/.venv /app/.venv
-COPY app ./app
-
 RUN groupadd --gid 10001 appuser \
-    && useradd --uid 10001 --gid 10001 --no-create-home appuser
+    && useradd --uid 10001 --gid 10001 --create-home appuser
+
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --chown=appuser:appuser app ./app
 
 USER appuser
 

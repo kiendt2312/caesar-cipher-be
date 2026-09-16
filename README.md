@@ -103,6 +103,12 @@ curl -sS -X POST http://localhost:8000/api/caesar/encrypt \
 Kết quả quan sát được (HTTP status, cấu trúc response, thông báo lỗi) giống hệt
 chạy local với cùng đầu vào.
 
+## Giới hạn triển khai
+
+Ứng dụng Tuần 1 **không có rate limit** và được thiết kế cho mục đích học tập,
+không nên phơi trực tiếp ra Internet. Nếu triển khai công khai, đặt reverse proxy
+phía trước để giới hạn kích thước request và bổ sung rate limit phù hợp.
+
 ## Dọn dữ liệu thử nghiệm
 
 Dừng container: nhấn `Ctrl+C`; với `--rm` container tự xóa. Không có database

@@ -37,7 +37,8 @@ Giao diện SHALL lấy kết quả mã hóa/giải mã từ phản hồi của 
 #### Scenario: Kết quả hiển thị đúng bằng nội dung máy chủ trả về
 
 - **WHEN** máy chủ trả về phản hồi thành công cho một yêu cầu mã hóa
-- **THEN** vùng kết quả hiển thị đúng chuỗi kết quả do máy chủ trả về, không bị giao diện sửa đổi
+- **THEN** chuỗi quan sát được trong vùng kết quả đúng từng ký tự với `result` do máy chủ trả về, không bị giao diện thêm ký tự xuống dòng hay sửa đổi nội dung
+- **AND** thao tác sao chép và tải kết quả dùng đúng chuỗi đó, không thêm ký tự nào
 
 ### Requirement: Chọn chế độ mã hóa hoặc giải mã
 
@@ -372,6 +373,13 @@ Trong lúc chờ phản hồi từ máy chủ, giao diện SHALL vô hiệu hóa
 - **THEN** vùng nhập đầu vào, ô khóa, bộ chọn chế độ và bộ chọn nguồn đầu vào đều bị khóa, không nhận thay đổi từ người dùng
 - **AND** người dùng không thể đổi chế độ hay đổi nguồn đầu vào khiến trạng thái lệch với yêu cầu đang xử lý
 
+#### Scenario: Khóa phím tắt và mọi cách kích hoạt vùng thả trong lúc gửi
+
+- **WHEN** một yêu cầu đang được gửi đi và chưa có phản hồi
+- **THEN** các phím tắt của giao diện không thay đổi trạng thái và không gửi thêm request
+- **AND** click, Enter hoặc Space trên vùng thả không mở hộp chọn file
+- **AND** việc thả một file thực tế lên vùng thả không thay thế file hay đầu vào đang gắn với request
+
 #### Scenario: Không gửi trùng lặp
 
 - **WHEN** người dùng cố kích hoạt nút hành động lần nữa trong lúc yêu cầu trước chưa hoàn tất
@@ -413,6 +421,12 @@ Khi máy chủ trả về phản hồi lỗi, giao diện SHALL hiển thị đ�
 - **THEN** giao diện hiển thị đúng chuỗi "File vượt quá dung lượng tối đa 5 MB." trong thông báo lỗi
 - **AND** thanh trạng thái kết quả chuyển sang mức lỗi
 
+#### Scenario: Hiển thị nguyên văn lỗi trần hạ tầng generic
+
+- **WHEN** máy chủ trả HTTP 413 với `message` là "Yêu cầu vượt quá dung lượng cho phép."
+- **THEN** giao diện hiển thị đúng chuỗi "Yêu cầu vượt quá dung lượng cho phép."
+- **AND** thanh trạng thái kết quả chuyển sang mức lỗi
+
 #### Scenario: Không lộ chi tiết kỹ thuật khi máy chủ lỗi hệ thống
 
 - **WHEN** máy chủ trả về lỗi hệ thống với `message` là "Đã xảy ra lỗi hệ thống."
@@ -428,6 +442,13 @@ Khi máy chủ trả về phản hồi lỗi, giao diện SHALL hiển thị đ�
 
 - **WHEN** một yêu cầu thất bại và trước đó đã có kết quả hiển thị
 - **THEN** giao diện không trình bày kết quả cũ như kết quả của yêu cầu vừa thất bại
+
+#### Scenario: Tải file kết quả thất bại sau một lượt thành công
+
+- **WHEN** giao diện đang có kết quả và phân tích của một lượt thành công, rồi request tải file kết quả thất bại
+- **THEN** giao diện xóa kết quả và phân tích cũ, đồng thời vô hiệu các hành động cần kết quả
+- **AND** vùng kết quả trở về nội dung gợi ý thay vì tiếp tục hiển thị thành công cũ
+- **AND** thanh trạng thái kết quả chuyển sang mức lỗi và thông báo hiển thị `message` của máy chủ
 
 ### Requirement: Xử lý lỗi không gọi được máy chủ
 
@@ -510,8 +531,9 @@ Panel kết quả SHALL có nút "Sao chép" để sao chép toàn bộ kết qu
 
 #### Scenario: Xóa kết quả
 
-- **WHEN** người dùng nhấn "Xóa" ở panel kết quả
-- **THEN** vùng kết quả trở về nội dung gợi ý ban đầu, phần phân tích trống
+- **WHEN** người dùng đang xem tab "Phân tích" rồi nhấn "Xóa" ở panel kết quả
+- **THEN** trạng thái view được đặt lại về tab "Văn bản", vùng kết quả hiển thị nội dung gợi ý ban đầu và phần phân tích bị xóa/ẩn
+- **AND** tab "Văn bản" có trạng thái ARIA được chọn, tab "Phân tích" có trạng thái ARIA không được chọn
 - **AND** thanh trạng thái kết quả trở về mức trung tính và các nút của panel kết quả bị vô hiệu
 
 ### Requirement: Tải kết quả xuống dưới dạng file UTF-8

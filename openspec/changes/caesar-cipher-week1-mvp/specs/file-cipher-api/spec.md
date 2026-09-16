@@ -115,7 +115,7 @@ Hệ thống SHALL chỉ chấp nhận file có tên kết thúc bằng đuôi `
 
 ### Requirement: Giới hạn dung lượng file 5 MiB
 
-Hệ thống SHALL giới hạn dung lượng file đầu vào tối đa 5 MiB, tương đương `5 * 1024 * 1024` = `5242880` bytes. File có kích thước nhỏ hơn hoặc bằng `5242880` bytes SHALL được chấp nhận; file lớn hơn `5242880` bytes SHALL bị từ chối với HTTP 413 và thông báo `File vượt quá dung lượng tối đa 5 MB.` Thông báo này SHALL được giữ nguyên văn theo bảng lỗi chuẩn dù đơn vị thực tế là MiB. (Truy vết: docx §2.4, §5, §7)
+Hệ thống SHALL giữ nguyên giới hạn nghiệp vụ cho nội dung file đầu vào tối đa 5 MiB, tương đương `5 * 1024 * 1024` = `5242880` bytes. File có kích thước nhỏ hơn hoặc bằng `5242880` bytes SHALL được chấp nhận; file lớn hơn `5242880` bytes SHALL bị handler từ chối với HTTP 413 và thông báo `File vượt quá dung lượng tối đa 5 MB.` Thông báo này SHALL được giữ nguyên văn theo bảng lỗi chuẩn dù đơn vị thực tế là MiB. Ngoài giới hạn nghiệp vụ này, request tới tuyến API file có `Content-Length` lớn hơn trần hạ tầng 64 MiB SHALL bị tầng 0 từ chối trước khi parse multipart nhưng vẫn dùng chính thông báo file nói trên; trần hạ tầng MUST NOT thay thế hoặc nới giới hạn 5 MiB của handler. (Truy vết: docx §2.4, §5, §7; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: File đúng 5 MiB được chấp nhận
 
@@ -128,6 +128,12 @@ Hệ thống SHALL giới hạn dung lượng file đầu vào tối đa 5 MiB, 
 - **WHEN** client gửi file `.txt` có kích thước `5242881` bytes với `key` và `action` hợp lệ
 - **THEN** hệ thống trả HTTP 413
 - **AND** thân phản hồi là JSON `{"success": false, "message": "File vượt quá dung lượng tối đa 5 MB."}`
+
+#### Scenario: Request file vượt trần hạ tầng
+
+- **WHEN** client gửi request tới API file có `Content-Length` lớn hơn 64 MiB, bất kể multipart còn có lỗi field nào khác
+- **THEN** tầng 0 trả HTTP 413 trước khi phân tích multipart
+- **AND** body phản hồi là `{"success": false, "message": "File vượt quá dung lượng tối đa 5 MB."}`
 
 ### Requirement: Kiểm tra encoding UTF-8
 
@@ -243,7 +249,7 @@ Hệ thống SHALL chỉ chấp nhận `action` bằng `encrypt` hoặc `decrypt
 
 ### Requirement: Thứ tự kiểm tra đầu vào theo hợp đồng chung
 
-Endpoint `POST /api/caesar/file` MUST áp dụng đúng thứ tự kiểm tra xác định đã quy định trong capability `error-handling` và MUST NOT định nghĩa một thứ tự riêng. Cụ thể cho luồng file, thứ tự đó là: sự hiện diện của `file` → `key` → `action`; rồi định dạng của `key` → `action` → `response_mode`; rồi đuôi file `.txt` (415); rồi giới hạn dung lượng 5 MiB (413); rồi file 0 byte (422); cuối cùng là giải mã UTF-8 (415). Hệ thống SHALL dừng ở lỗi đầu tiên gặp phải và trả đúng một thông báo duy nhất. (Truy vết: docx §5 — thứ tự do quyết định hợp nhất bổ sung)
+Endpoint `POST /api/caesar/file` MUST áp dụng đúng thứ tự kiểm tra xác định đã quy định trong capability `error-handling` và MUST NOT định nghĩa một thứ tự riêng. Ngoại lệ hạ tầng duy nhất là request có `Content-Length` lớn hơn 64 MiB: tầng 0 SHALL từ chối trước khi parse multipart với HTTP 413 và thông báo file. Với mọi request không bị tầng 0 từ chối, thứ tự luồng file là: sự hiện diện của `file` → `key` → `action`; rồi định dạng của `key` → `action` → `response_mode`; rồi đuôi file `.txt` (415); rồi giới hạn nội dung file 5 MiB (413); rồi file 0 byte (422); cuối cùng là giải mã UTF-8 (415). Hệ thống SHALL dừng ở lỗi đầu tiên gặp phải và trả đúng một thông báo duy nhất. (Truy vết: docx §5 — thứ tự do quyết định hợp nhất bổ sung; ngoại lệ hạ tầng OpenSpec được chủ sở hữu phê duyệt)
 
 #### Scenario: Key sai định dạng được báo trước lỗi đuôi file và dung lượng
 

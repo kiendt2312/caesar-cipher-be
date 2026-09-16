@@ -34,6 +34,7 @@ rules:
   specs:
     - Mỗi requirement phải truy vết được về mục tương ứng trong docx (ghi kèm tham chiếu, ví dụ "docx §2.4")
     - Scenario phải phủ đủ bảng validation docx mục 5 gồm HTTP status và thông báo chính xác
+    - Ngoại lệ hạ tầng ngoài docx chỉ được thêm khi chủ sở hữu phê duyệt rõ ràng; phải gắn nhãn "ngoại lệ hạ tầng được chủ sở hữu phê duyệt", không được sửa hoặc trình bày sai nguồn sự thật nghiệp vụ trong docx
   tasks:
     - Chia task theo module (Caesar Core, File Processing, HTTP Adapter, Web UI, Exception Handling, Test, Docker)
     - Mỗi task tối đa khoảng 2 giờ và ghi rõ tiêu chí hoàn thành

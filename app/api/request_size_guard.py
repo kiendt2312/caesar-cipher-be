@@ -69,6 +69,14 @@ def _exceeds_limit(value: bytes | None, max_bytes: int) -> bool:
     return len(significant) > len(limit) or (len(significant) == len(limit) and significant > limit)
 
 
+def _request_too_large_message(scope: Scope) -> str:
+    """Select the public 413 message from the route, never from Content-Type."""
+
+    if scope.get("path") == "/api/caesar/file":
+        return messages.FILE_TOO_LARGE
+    return messages.REQUEST_TOO_LARGE
+
+
 class RequestSizeGuard:
     """Reject over-ceiling Content-Length values before downstream body access."""
 
@@ -83,7 +91,7 @@ class RequestSizeGuard:
 
         response = JSONResponse(
             status_code=413,
-            content={"success": False, "message": messages.FILE_TOO_LARGE},
+            content={"success": False, "message": _request_too_large_message(scope)},
         )
         await response(scope, receive, send)
 

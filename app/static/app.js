@@ -96,7 +96,7 @@ function colorize(text) {
     buffer += character;
   }
   flush();
-  return `${result}\n`;
+  return result;
 }
 
 function setStatus(element, text, kind = "neutral") {
@@ -143,6 +143,7 @@ function normalizedKey(parsed = parseKey()) {
 }
 
 function shiftAlphabet(key, operation) {
+  // Display-only mapping for the alphabet table; server responses remain authoritative.
   const direction = operation === "encrypt" ? 1 : -1;
   return [...ALPHABET].map((_, index) => ALPHABET[(index + direction * key + 26) % 26]);
 }
@@ -552,7 +553,9 @@ async function downloadResult() {
     }
     showNotice("success", "Đã tạo file tải xuống", resultFilename());
   } catch (error) {
+    clearResult({ keepNotice: true });
     const message = error.isApiError ? error.message : "Không thể tải kết quả. Vui lòng thử lại.";
+    setStatus(elements.outputStatus, "Tải kết quả thất bại", "error");
     showNotice("error", "Tải kết quả thất bại", message);
   } finally {
     state.loading = false;

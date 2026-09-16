@@ -17,15 +17,18 @@ from app.main import app
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 
-def _scope(headers: list[tuple[bytes, bytes]]) -> Scope:
+def _scope(
+    headers: list[tuple[bytes, bytes]],
+    path: str = "/api/caesar/file",
+) -> Scope:
     return {
         "type": "http",
         "asgi": {"version": "3.0", "spec_version": "2.3"},
         "http_version": "1.1",
         "method": "POST",
         "scheme": "http",
-        "path": "/api/caesar/file",
-        "raw_path": b"/api/caesar/file",
+        "path": path,
+        "raw_path": path.encode("ascii"),
         "query_string": b"",
         "root_path": "",
         "headers": headers,
@@ -34,7 +37,11 @@ def _scope(headers: list[tuple[bytes, bytes]]) -> Scope:
     }
 
 
-def _run_asgi(asgi_app: ASGIApp, headers: list[tuple[bytes, bytes]]) -> tuple[list[Message], int]:
+def _run_asgi(
+    asgi_app: ASGIApp,
+    headers: list[tuple[bytes, bytes]],
+    path: str = "/api/caesar/file",
+) -> tuple[list[Message], int]:
     events: list[Message] = []
     receive_calls = 0
 
@@ -46,7 +53,7 @@ def _run_asgi(asgi_app: ASGIApp, headers: list[tuple[bytes, bytes]]) -> tuple[li
     async def send(message: Message) -> None:
         events.append(message)
 
-    asyncio.run(asgi_app(_scope(headers), receive, send))
+    asyncio.run(asgi_app(_scope(headers, path), receive, send))
     return events, receive_calls
 
 
@@ -91,18 +98,33 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
     ).encode("utf-8")
 
 
-def test_production_app_wires_the_early_guard() -> None:
+@pytest.mark.parametrize(
+    ("path", "expected_message"),
+    [
+        ("/api/caesar/file", messages.FILE_TOO_LARGE),
+        ("/api/caesar/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/docs", messages.REQUEST_TOO_LARGE),
+    ],
+)
+def test_production_app_wires_route_aware_early_guard(
+    path: str,
+    expected_message: str,
+) -> None:
     events, receive_calls = _run_asgi(
         app,
         [(b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        path,
     )
 
     assert receive_calls == 0
     assert events[0]["status"] == 413
-    assert json.loads(_response_body(events)) == {
+    body = json.loads(_response_body(events))
+    assert body == {
         "success": False,
-        "message": messages.FILE_TOO_LARGE,
+        "message": expected_message,
     }
+    assert set(body) == {"success", "message"}
+    assert "64" not in body["message"]
 
 
 def test_exact_ceiling_passes_through_and_downstream_reads_body() -> None:

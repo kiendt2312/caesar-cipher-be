@@ -27,3 +27,8 @@ def test_file_size_threshold_literal_has_one_implementation_source() -> None:
                 occurrences.append(path.relative_to(PROJECT_ROOT))
 
     assert occurrences == [Path("app/config.py")]
+
+
+def test_file_limit_comment_states_the_exact_binary_size() -> None:
+    source = (PROJECT_ROOT / "app/config.py").read_text(encoding="utf-8")
+    assert "5242880 byte = 5 MiB" in source

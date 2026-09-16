@@ -99,6 +99,16 @@ def test_ui_supports_whitespace_plus_keys_download_and_full_locking() -> None:
     assert "ket-qua.decrypted.txt" in SCRIPT
     assert 'querySelectorAll("[data-lockable]")' in SCRIPT
     assert "control.disabled = state.loading" in SCRIPT
+    assert "elements.dropZone.tabIndex = state.loading ? -1 : 0" in SCRIPT
+    assert (
+        'elements.dropZone.addEventListener("click", (event) => {\n  if (state.loading) return;'
+    ) in SCRIPT
+    assert (
+        'elements.dropZone.addEventListener("keydown", (event) => {\n'
+        '  if (event.key === "Enter" || event.key === " ") {\n'
+        "    event.preventDefault();\n"
+        "    if (state.loading) return;"
+    ) in SCRIPT
 
 
 def test_real_api_distinguishes_server_errors_from_network_failures() -> None:
@@ -110,8 +120,10 @@ def test_real_api_distinguishes_server_errors_from_network_failures() -> None:
 
 
 def test_ui_resets_result_tab_times_out_requests_and_ignores_stale_file_reads() -> None:
-    assert 'state.view = "result"' in SCRIPT
-    assert 'tab.dataset.view === "result"' in SCRIPT
+    clear_result = SCRIPT.split("function clearResult", 1)[1].split("function render", 1)[0]
+    render = SCRIPT.split("function render", 1)[1].split("function selectMode", 1)[0]
+    assert 'state.view = "result"' in clear_result
+    assert "tab.dataset.view === state.view" in render
     assert "new AbortController()" in SCRIPT
     assert "controller.abort()" in SCRIPT
     assert "window.clearTimeout(timeout)" in SCRIPT

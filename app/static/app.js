@@ -229,6 +229,7 @@ function validateKey() {
 
 function clearResult({ keepNotice = false } = {}) {
   state.result = null;
+  state.view = "result";
   elements.result.className = "output empty";
   elements.result.textContent = "Kết quả sẽ hiển thị ở đây sau khi xử lý.";
   elements.analysis.replaceChildren();
@@ -270,6 +271,7 @@ function render() {
     control.setAttribute("aria-disabled", String(state.loading));
     control.disabled = state.loading;
   });
+  elements.dropZone.tabIndex = state.loading ? -1 : 0;
   if (!state.loading) {
     elements.copyInput.disabled = currentInputText() === "";
     elements.copyKey.disabled = elements.keyInput.value === "";
@@ -281,6 +283,9 @@ function render() {
 
   elements.result.hidden = state.view !== "result";
   elements.analysis.hidden = state.view !== "analysis";
+  document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
+    tab.setAttribute("aria-selected", String(tab.dataset.view === state.view));
+  });
   renderShiftTable();
 }
 
@@ -362,9 +367,6 @@ function addAnalysisRow(term, description) {
 function showResult(result, source) {
   state.result = result;
   state.view = "result";
-  document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
-    tab.setAttribute("aria-selected", String(tab.dataset.view === "result"));
-  });
   elements.result.className = "output";
   elements.result.innerHTML = colorize(result);
   elements.analysis.replaceChildren();
@@ -620,11 +622,13 @@ elements.fileInput.addEventListener("change", () => {
   if (file) setFile(file);
 });
 elements.dropZone.addEventListener("click", (event) => {
+  if (state.loading) return;
   if (event.target !== byId("pickFile")) elements.fileInput.click();
 });
 elements.dropZone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (state.loading) return;
     elements.fileInput.click();
   }
 });
@@ -656,9 +660,6 @@ byId("example").addEventListener("click", () => {
 document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
   tab.addEventListener("click", () => {
     state.view = tab.dataset.view;
-    document.querySelectorAll("#outputPanel [data-view]").forEach((candidate) => {
-      candidate.setAttribute("aria-selected", String(candidate === tab));
-    });
     render();
   });
 });

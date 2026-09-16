@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Công cụ Caesar Cipher</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+</head>
+<body
+  data-max-bytes="{{ max_file_bytes }}"
+  data-message-file-type="{{ ui_messages.file_type }}"
+  data-message-file-size="{{ ui_messages.file_size }}"
+  data-message-file-empty="{{ ui_messages.file_empty }}"
+  data-message-key-missing="{{ ui_messages.key_missing }}"
+  data-message-key-invalid="{{ ui_messages.key_invalid }}"
+  data-message-system="{{ ui_messages.system }}"
+>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="kicker">Minh họa thuật toán</p>
+        <h1>Caesar Cipher</h1>
+        <p class="subtitle">Mã hóa hoặc giải mã văn bản và file .txt. Chỉ các chữ cái ASCII A–Z, a–z được dịch chuyển.</p>
+      </div>
+      <button class="button secondary" id="resetAll" type="button" data-lockable>Làm mới</button>
+    </header>
+
+    <section class="mode-row" aria-label="Chế độ xử lý">
+      <div class="mode-tabs" role="tablist" aria-label="Chế độ">
+        <button class="mode-tab active" id="modeEncrypt" type="button" role="tab" aria-selected="true" data-mode="encrypt" data-lockable>
+          <span aria-hidden="true">🔒</span><span><small>Chế độ</small><strong>Mã hóa</strong></span>
+        </button>
+        <button class="mode-tab" id="modeDecrypt" type="button" role="tab" aria-selected="false" data-mode="decrypt" data-lockable>
+          <span aria-hidden="true">🔓</span><span><small>Chế độ</small><strong>Giải mã</strong></span>
+        </button>
+      </div>
+      <button class="button secondary" id="example" type="button" data-lockable>Tạo ví dụ</button>
+    </section>
+    <p class="helper" id="helperText">Nhập bản rõ bên dưới để mã hóa bằng hệ mật Caesar.</p>
+
+    <section class="workspace" aria-label="Không gian xử lý">
+      <div>
+        <div class="section-heading">
+          <span>Đầu vào</span>
+          <div class="segmented" role="group" aria-label="Nguồn đầu vào">
+            <button id="typeText" type="button" aria-pressed="true" data-lockable>Văn bản</button>
+            <button id="typeFile" type="button" aria-pressed="false" data-lockable>File .txt</button>
+          </div>
+        </div>
+
+        <article class="panel" id="inputPanel">
+          <header class="panel-head">
+            <h2 id="inputTitle">Bản rõ</h2>
+            <div class="panel-actions">
+              <button class="mini-button" id="copyInput" type="button" data-lockable disabled>Sao chép</button>
+              <button class="mini-button" id="clearInput" type="button" data-lockable>Xóa</button>
+            </div>
+          </header>
+
+          <div id="textWrap">
+            <div class="highlight-editor">
+              <pre id="inputHighlight" aria-hidden="true"></pre>
+              <textarea id="textInput" rows="10" placeholder="Nhập hoặc dán văn bản…" aria-label="Nội dung đầu vào" spellcheck="false" data-lockable></textarea>
+            </div>
+          </div>
+
+          <div id="fileWrap" hidden>
+            <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file .txt" data-lockable>
+              <span class="drop-icon" aria-hidden="true">⇧</span>
+              <strong>Kéo thả file .txt vào đây</strong>
+              <span>hoặc</span>
+              <button class="button secondary" id="pickFile" type="button" data-lockable>Chọn file</button>
+              <small>Chỉ nhận .txt · tối đa 5 MiB</small>
+              <input id="fileInput" type="file" accept=".txt,text/plain" hidden data-lockable>
+            </div>
+            <div id="fileCard" hidden>
+              <div class="file-row">
+                <span class="extension">TXT</span>
+                <div class="file-meta"><strong id="fileName"></strong><span id="fileSize"></span></div>
+                <div class="panel-actions">
+                  <button class="mini-button" id="changeFile" type="button" data-lockable>Đổi file</button>
+                  <button class="mini-button" id="removeFile" type="button" data-lockable>Gỡ file</button>
+                </div>
+              </div>
+              <pre class="preview" id="filePreview" aria-label="Xem trước nội dung file"></pre>
+            </div>
+          </div>
+
+          <div class="status-bar" id="inputStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa có dữ liệu</span></div>
+        </article>
+      </div>
+
+      <div>
+        <div class="section-heading"><span>Kết quả</span></div>
+        <article class="panel" id="outputPanel">
+          <header class="panel-head output-head">
+            <h2 id="outputTitle">Bản mã</h2>
+            <div class="result-tabs" role="tablist" aria-label="Cách xem kết quả">
+              <button type="button" role="tab" aria-selected="true" data-view="result" data-lockable>Văn bản</button>
+              <button type="button" role="tab" aria-selected="false" data-view="analysis" data-lockable>Phân tích</button>
+            </div>
+            <div class="panel-actions">
+              <button class="mini-button" id="downloadOutput" type="button" data-lockable disabled>Tải kết quả</button>
+              <button class="mini-button" id="copyOutput" type="button" data-lockable disabled>Sao chép</button>
+              <button class="mini-button" id="clearOutput" type="button" data-lockable disabled>Xóa</button>
+            </div>
+          </header>
+          <div class="output empty" id="result" aria-live="polite">Kết quả sẽ hiển thị ở đây sau khi xử lý.</div>
+          <dl class="analysis" id="analysis" hidden></dl>
+          <div class="status-bar" id="outputStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa xử lý</span></div>
+        </article>
+
+        <div class="section-heading"><span>Bảng dịch chuyển</span></div>
+        <article class="panel alphabet-panel">
+          <header class="panel-head">
+            <h2 id="shiftTitle">Khóa 0 · A → A</h2>
+            <span class="legend">Ô nổi bật là chữ có trong đầu vào</span>
+          </header>
+          <div class="alphabet-scroll">
+            <div class="alphabet-row" id="sourceAlphabet"><b id="sourceLabel">Bản rõ</b></div>
+            <div class="alphabet-row shifted" id="shiftedAlphabet"><b id="shiftedLabel">Bản mã</b></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="key-section" aria-labelledby="keyHeading">
+      <h2 id="keyHeading">Khóa Caesar</h2>
+      <p>Nhập số nguyên có dấu. Khóa được chuẩn hóa về 0–25 trước khi xử lý.</p>
+      <div class="key-grid">
+        <article class="panel key-panel">
+          <header class="panel-head">
+            <h3>Khóa dịch chuyển</h3>
+            <div class="panel-actions">
+              <button class="mini-button" id="copyKey" type="button" data-lockable disabled>Sao chép</button>
+              <button class="mini-button" id="clearKey" type="button" data-lockable>Xóa</button>
+            </div>
+          </header>
+          <div class="key-input-row">
+            <input id="keyInput" type="text" inputmode="numeric" autocomplete="off" placeholder="ví dụ: +3 hoặc -3" aria-describedby="keyNote" data-lockable>
+            <span id="normalizedKey"></span>
+          </div>
+          <p class="key-note" id="keyNote">Ví dụ: 29 → 3, −3 → 23, 26 → 0.</p>
+          <div class="status-bar" id="keyStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa nhập khóa</span></div>
+        </article>
+
+        <div class="action-area">
+          <button class="button primary" id="actionButton" type="button" data-lockable disabled>Mã hóa</button>
+          <p>Nút chỉ bật khi đầu vào và khóa hợp lệ. Toàn bộ điều khiển được khóa trong lúc xử lý.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="notice" id="notice" role="status" aria-live="assertive" hidden>
+      <div><strong id="noticeTitle"></strong><span id="noticeMessage"></span></div>
+      <button id="closeNotice" type="button" aria-label="Đóng thông báo">×</button>
+    </div>
+  </main>
+  <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+</body>
+</html>

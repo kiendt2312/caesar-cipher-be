@@ -1,0 +1,39 @@
+schema: spec-driven
+
+context: |
+  Dự án: Caesar Cipher Web App - Tuần 1 MVP (học tập, minh họa thuật toán).
+  Tài liệu gốc (source of truth): "BE Scope – Week 1 Caesar Cipher MVP.docx" v1.0 (đã thống nhất).
+  Mockup giao diện: Caesar_Cipher_Tool_Demo.html (tham chiếu hành vi UI, KHÔNG phải source of truth
+  cho giới hạn/thông báo lỗi - khi mâu thuẫn thì theo docx).
+
+  Tech stack (đã chốt):
+  - Python 3.12, FastAPI + uvicorn, phục vụ luôn cả UI (không tách project frontend, same-origin, không CORS)
+  - Quản lý dependency bằng uv (pyproject.toml)
+  - Test: pytest + pytest-cov, coverage backend tối thiểu 90%
+  - Lint/format: Ruff (check + format)
+  - Docker: Dockerfile multi-stage; app chạy cổng 8000 cho cả local lẫn Docker
+  - UI: static HTML/CSS/JS thuần (không React), phục vụ qua StaticFiles/Jinja2
+
+  Ràng buộc nghiệp vụ chốt từ docx (ưu tiên hơn HTML demo):
+  - Dung lượng file tối đa 5 MiB (5 * 1024 * 1024 bytes); đúng 5 MiB thì nhận, 5 MiB + 1 byte thì từ chối
+  - Tên file kết quả: <ten-goc>.encrypted.txt / <ten-goc>.decrypted.txt (dùng dấu chấm, KHÔNG dùng gạch dưới)
+  - Endpoint file hỗ trợ response_mode = content | file (mặc định content)
+  - Giữ UTF-8 BOM ở file tải xuống nếu file đầu vào có BOM
+  - Thông báo lỗi tiếng Việt theo đúng bảng validation trong docx mục 5, không lộ stack trace ra UI
+  - Ứng dụng stateless, không lưu input/file/kết quả sau request
+
+  Quy ước:
+  - Toàn bộ text hướng tới người dùng cuối bằng tiếng Việt
+  - Artifact OpenSpec viết bằng tiếng Việt
+  - Không tạo abstract cipher interface hay repository pattern ở Tuần 1
+
+rules:
+  proposal:
+    - Nêu rõ các điểm mâu thuẫn giữa docx và HTML demo đã được giải quyết thế nào
+    - Có mục "Ngoài phạm vi" bám theo docx mục 8
+  specs:
+    - Mỗi requirement phải truy vết được về mục tương ứng trong docx (ghi kèm tham chiếu, ví dụ "docx §2.4")
+    - Scenario phải phủ đủ bảng validation docx mục 5 gồm HTTP status và thông báo chính xác
+  tasks:
+    - Chia task theo module (Caesar Core, File Processing, HTTP Adapter, Web UI, Exception Handling, Test, Docker)
+    - Mỗi task tối đa khoảng 2 giờ và ghi rõ tiêu chí hoàn thành

@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caesar Cipher Debugger</title>
+<style>
+  :root{
+    --bg:#fff; --bg-2:#f7f8fa; --ink:#1a1a1a; --ink-2:#6b7280; --line:#e3e5ea; --line-2:#cfd3db;
+    --dark:#111; --green:#0e9f6e; --green-2:#e6f7f0; --red:#d92d20; --red-2:#fdecea;
+    --c-upper:#fb015b; --c-lower:#d63aff; --c-other:#00b9f1;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+  button,input,textarea{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+  a{color:inherit}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+  /* top banner + nav (jwt.io) */
+  .banner{background:var(--dark);color:#d4d4d8;font-size:13px;text-align:center;padding:8px 16px}
+  .banner a{color:#fff;font-weight:600;text-decoration:underline;margin-left:6px}
+  .nav{border-bottom:1px solid var(--line);background:#fff}
+  .nav-in{max-width:1180px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:28px}
+  .logo{font-weight:800;font-size:22px;letter-spacing:-.02em}
+  .logo span{color:var(--c-upper)}
+  .nav ul{list-style:none;margin:0;padding:0;display:flex;gap:22px;font-size:14px;font-weight:500}
+  .nav li.active{color:var(--ink);border-bottom:2px solid var(--ink);padding:19px 0}
+  .nav li{color:var(--ink-2)}
+  .nav .pill{margin-left:auto;font-size:12px;color:var(--ink-2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+
+  .page{max-width:1180px;margin:0 auto;padding:36px 24px 60px}
+  h1{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
+  .sub{color:var(--ink-2);margin:0 0 24px;max-width:78ch;font-size:16px}
+  hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 20px}
+
+  /* mode tabs */
+  .modes{display:flex;gap:8px;margin-bottom:20px}
+  .modes button{flex:0 0 220px;text-align:left;border:1px solid var(--line-2);border-radius:8px;padding:10px 14px;background:#fff;cursor:pointer;display:flex;gap:10px;align-items:center}
+  .modes button .ic{width:34px;height:34px;border-radius:8px;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:16px}
+  .modes button small{display:block;font-size:12px;color:var(--ink-2)}
+  .modes button b{font-weight:600;font-size:14px}
+  .modes button[aria-selected=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+  .modes button[aria-selected=true] small{color:#c7c7cc}
+  .modes button[aria-selected=true] .ic{background:#2a2a2a}
+  @media (max-width:640px){.modes button{flex:1}}
+
+  .helper{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:var(--ink-2);font-size:14px}
+  .btn-o{border:1px solid var(--line-2);background:#fff;border-radius:6px;padding:7px 14px;font-size:13.5px;font-weight:500;cursor:pointer;white-space:nowrap}
+  .btn-o:hover{background:var(--bg-2)}
+  .btn-o:disabled{opacity:.45;cursor:not-allowed}
+
+  /* two columns */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media (max-width:900px){.cols{grid-template-columns:1fr}}
+  .eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px;display:flex;align-items:center;gap:12px}
+  .eyebrow .sw{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400;display:flex;align-items:center;gap:8px}
+  .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:3px 10px;font-size:12.5px;cursor:pointer;color:var(--ink-2)}
+  .seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+
+  .panel{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;margin-bottom:20px}
+  .p-head{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--bg-2)}
+  .p-head h2{font-size:14px;font-weight:600;margin:0}
+  .p-head .tabs{display:flex;margin-left:12px;gap:2px}
+  .p-head .tabs button{border:0;background:none;padding:4px 10px;border-radius:6px;font-size:13px;color:var(--ink-2);cursor:pointer}
+  .p-head .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+  .p-head .sp{flex:1}
+  .p-head .btn-o{padding:4px 10px;font-size:12.5px}
+
+  /* highlighted textarea */
+  .hl{position:relative;min-height:260px}
+  .hl pre,.hl textarea{margin:0;padding:14px 16px;font-family:var(--mono);font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;width:100%;min-height:260px}
+  .hl pre{position:absolute;inset:0;overflow:auto;pointer-events:none;color:var(--ink)}
+  .hl textarea{position:relative;display:block;background:transparent;color:transparent;caret-color:var(--ink);border:0;resize:vertical;outline:none;height:260px}
+  .hl textarea::placeholder{color:#9aa0ab}
+  .hl textarea:focus-visible{outline:none}
+  .hl:focus-within{box-shadow:inset 0 0 0 2px #2563eb33}
+  .u{color:var(--c-upper)} .l{color:var(--c-lower)} .o{color:var(--c-other)}
+
+  /* file mode */
+  .drop{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink-2);text-align:center;padding:24px;border:2px dashed transparent}
+  .drop.over{border-color:var(--c-other);background:#f0fbff}
+  .drop strong{color:var(--ink)}
+  .file-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);background:#fff}
+  .file-row .ext{font-family:var(--mono);font-size:11px;background:var(--ink);color:#fff;border-radius:4px;padding:2px 6px}
+  .file-row .nm{font-family:var(--mono);font-size:13px;word-break:break-all}
+  .file-row .sz{font-size:12px;color:var(--ink-2)}
+  .file-row .sp{flex:1}
+  .preview{padding:14px 16px;font-family:var(--mono);font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:200px;max-height:300px;overflow:auto}
+
+  /* status bar */
+  .vbar{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:13.5px;font-weight:500;border-top:1px solid var(--line);background:var(--bg-2);color:var(--ink-2)}
+  .vbar.ok{background:var(--green-2);color:#0a6b4b}
+  .vbar.err{background:var(--red-2);color:#9a1d15}
+  .vbar .dot{width:16px;height:16px;border-radius:50%;border:1.5px solid currentColor;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+  .vbar.ok .dot{background:var(--green);border-color:var(--green);color:#fff}
+  .vbar.err .dot{background:var(--red);border-color:var(--red);color:#fff}
+
+  /* output */
+  .out{padding:14px 16px;font-family:var(--mono);font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;min-height:200px;max-height:420px;overflow:auto}
+  .out.empty{color:#9aa0ab;font-family:var(--sans);display:flex;align-items:center;justify-content:center;min-height:200px}
+  .kv{padding:6px 16px 10px;font-size:14px}
+  .kv div{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .kv div:last-child{border:0}
+  .kv span:first-child{color:var(--ink-2)}
+  .kv span:last-child{font-family:var(--mono)}
+
+  /* alphabet map */
+  .map{padding:12px 16px;overflow-x:auto}
+  .map .row{display:grid;grid-template-columns:52px repeat(26,minmax(19px,1fr));gap:2px;font-family:var(--mono);font-size:12.5px;min-width:600px}
+  .map .row + .row{margin-top:3px}
+  .map .lbl{font-family:var(--sans);font-size:12px;color:var(--ink-2);align-self:center}
+  .map .row span{text-align:center;padding:3px 0;border-radius:3px;background:var(--bg-2)}
+  .map .row.to span{background:var(--ink);color:#fff}
+  .map .row span.hit{background:#ffe2ec;color:var(--c-upper)}
+  .map .row.to span.hit{background:var(--c-upper);color:#fff}
+
+  /* key section */
+  .sec-h{font-size:20px;font-weight:700;margin:8px 0 4px}
+  .sec-p{color:var(--ink-2);margin:0 0 12px;font-size:14px}
+  .keygrid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+  @media (max-width:900px){.keygrid{grid-template-columns:1fr}}
+  .keyin{padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .keyin input{width:140px;border:1px solid var(--line-2);border-radius:6px;padding:9px 12px;font-family:var(--mono);font-size:15px}
+  .keyin .norm{font-family:var(--mono);color:var(--ink-2);font-size:13.5px}
+  .keynote{padding:0 16px 12px;font-size:13px;color:var(--ink-2)}
+  .action-wrap{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  .btn-p{border:0;border-radius:8px;padding:11px 26px;background:var(--ink);color:#fff;font-weight:600;font-size:15px;cursor:pointer;min-width:180px;display:inline-flex;justify-content:center;align-items:center;gap:8px}
+  .btn-p:hover{background:#000}
+  .btn-p:disabled{background:#c4c8cf;cursor:not-allowed}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .tip{font-size:13px;color:var(--ink-2);max-width:48ch}
+
+  /* notification */
+  .notice{display:none;align-items:center;gap:10px;margin-top:16px;padding:11px 14px;border-radius:8px;font-size:14px;border:1px solid transparent}
+  .notice.show{display:flex}
+  .notice.ok{background:var(--green-2);border-color:#b7e4cf;color:#0a6b4b}
+  .notice.err{background:var(--red-2);border-color:#f3c1bb;color:#9a1d15}
+  .notice.warn{background:#fff7e6;border-color:#f3dfa8;color:#7a4b00}
+  .notice b{font-weight:600}
+  .notice .x{margin-left:auto;border:0;background:none;cursor:pointer;color:inherit;opacity:.7;font-size:18px;line-height:1}
+
+  footer{max-width:1180px;margin:0 auto;padding:16px 24px 40px;font-size:13px;color:var(--ink-2);display:flex;gap:16px;flex-wrap:wrap}
+  footer a{text-decoration:underline}
+  footer code{font-family:var(--mono);background:var(--bg-2);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+</style>
+</head>
+<body>
+
+<div class="banner">Caesar_Cipher · Tuần 1 · Demo giao diện theo chuẩn jwt.io <a href="#" onclick="return false">Backend đang giả lập trong file</a></div>
+
+<nav class="nav">
+  <div class="nav-in">
+    <div class="logo">CAESAR<span>.</span>IO</div>
+    <ul>
+      <li class="active">Debugger</li>
+      <li>Giới thiệu</li>
+      <li>Thuật toán</li>
+    </ul>
+    <span class="pill">Week 1 MVP</span>
+  </div>
+</nav>
+
+<main class="page">
+  <h1>Caesar Cipher Debugger</h1>
+  <p class="sub">Mã hóa, giải mã và kiểm tra văn bản theo hệ mật mã Caesar — đầu vào từ bàn phím hoặc file .txt, khóa dịch chuyển 0–25, giữ nguyên số, dấu câu và chữ hoa/thường.</p>
+  <hr class="rule">
+
+  <!-- CipherMode -->
+  <div class="modes" role="tablist" aria-label="Chế độ">
+    <button role="tab" id="tabDecrypt" aria-selected="false" data-mode="decrypt"><span class="ic">🔓</span><span><small>Decoder</small><b>Caesar Decoder</b></span></button>
+    <button role="tab" id="tabEncrypt" aria-selected="true" data-mode="encrypt"><span class="ic">🔒</span><span><small>Encoder</small><b>Caesar Encoder</b></span></button>
+  </div>
+
+  <div class="helper">
+    <span id="helperText">Dán bản rõ bên dưới để mã hóa bằng hệ mật Caesar.</span>
+    <button class="btn-o" id="example">Generate example</button>
+  </div>
+
+  <div class="cols">
+    <!-- LEFT: InputPanel -->
+    <div>
+      <p class="eyebrow">Đầu vào
+        <span class="sw">Kiểu
+          <span class="seg" role="group" aria-label="Kiểu đầu vào">
+            <button id="typeText" aria-pressed="true">Text</button>
+            <button id="typeFile" aria-pressed="false">File .txt</button>
+          </span>
+        </span>
+      </p>
+      <div class="panel" id="inputPanel">
+        <div class="p-head">
+          <h2 id="inputTitle">Bản rõ (Plaintext)</h2>
+          <span class="sp"></span>
+          <button class="btn-o" id="copyInput">Copy</button>
+          <button class="btn-o" id="clearInput">Clear</button>
+        </div>
+
+        <!-- TextInput -->
+        <div id="textWrap">
+          <div class="hl">
+            <pre id="hlPre" aria-hidden="true"></pre>
+            <textarea id="textInput" placeholder="Nhập hoặc dán văn bản…" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <!-- FileUpload -->
+        <div id="fileWrap" style="display:none">
+          <div class="drop" id="drop">
+            <div><strong>Kéo thả file .txt vào đây</strong></div>
+            <div>hoặc</div>
+            <button class="btn-o" id="pickFile">Chọn file</button>
+            <div style="font-size:12.5px">Chỉ nhận .txt · tối đa 1 MB</div>
+            <input type="file" id="fileInput" accept=".txt,text/plain" hidden>
+          </div>
+          <div id="fileCard" style="display:none">
+            <div class="file-row">
+              <span class="ext">TXT</span>
+              <div><div class="nm" id="fileName"></div><div class="sz" id="fileSize"></div></div>
+              <span class="sp"></span>
+              <button class="btn-o" id="changeFile">Change</button>
+              <button class="btn-o" id="removeFile">Remove</button>
+            </div>
+            <div class="preview" id="filePreview"></div>
+          </div>
+        </div>
+
+        <div class="vbar" id="inputBar"><span class="dot">·</span><span id="inputBarText">Chưa có dữ liệu</span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: OutputPanel + map -->
+    <div>
+      <p class="eyebrow">Kết quả</p>
+      <div class="panel" id="outputPanel">
+        <div class="p-head">
+          <h2 id="outputTitle">Bản mã (Ciphertext)</h2>
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected="true" data-view="result">Text</button>
+            <button role="tab" aria-selected="false" data-view="stats">Phân tích</button>
+          </div>
+          <span class="sp"></span>
+          <button class="btn-o" id="downloadOutput" disabled style="display:none">Download</button>
+          <button class="btn-o" id="copyOutput" disabled>Copy</button>
+          <button class="btn-o" id="clearOutput" disabled>Clear</button>
+        </div>
+        <div class="out empty" id="result" aria-live="polite">Kết quả sẽ hiển thị ở đây sau khi xử lý</div>
+        <div class="kv" id="stats" style="display:none"></div>
+        <div class="vbar" id="outputBar"><span class="dot">·</span><span id="outputBarText">Chưa xử lý</span></div>
+      </div>
+
+      <p class="eyebrow">Bảng dịch chuyển</p>
+      <div class="panel">
+        <div class="p-head"><h2 id="mapTitle">Khóa 3 · A → D</h2><span class="sp"></span><span style="font-size:12.5px;color:var(--ink-2)">Tô đỏ: chữ có trong đầu vào</span></div>
+        <div class="map">
+          <div class="row from" id="rowFrom"><span class="lbl" id="lblFrom">Bản rõ</span></div>
+          <div class="row to" id="rowTo"><span class="lbl" id="lblTo">Bản mã</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key section (≈ JWT Signature Verification) -->
+  <h2 class="sec-h">Khóa Caesar (Shift)</h2>
+  <p class="sec-p">Nhập số nguyên dùng để dịch chuyển bảng chữ cái. Khóa được chuẩn hóa về khoảng 0–25 trước khi xử lý.</p>
+  <div class="keygrid">
+    <div class="panel" style="margin-bottom:0">
+      <div class="p-head"><h2>Khóa</h2><span class="sp"></span><button class="btn-o" id="copyKey">Copy</button><button class="btn-o" id="clearKey">Clear</button></div>
+      <div class="keyin">
+        <input id="key" inputmode="numeric" placeholder="ví dụ: 3" autocomplete="off">
+        <span class="norm" id="keyNorm"></span>
+      </div>
+      <div class="keynote">Số âm hoặc lớn hơn 25 vẫn hợp lệ: 29 → 3, −3 → 23, 26 → 0.</div>
+      <div class="vbar" id="keyBar"><span class="dot">·</span><span id="keyBarText">Chưa nhập khóa</span></div>
+    </div>
+    <div class="action-wrap">
+      <button class="btn-p" id="action" disabled>Mã hóa</button>
+      <div class="tip">Nút chỉ bật khi đầu vào và khóa hợp lệ. Trong lúc gọi API, nút bị khóa và hiển thị trạng thái đang xử lý.</div>
+      <div class="notice" id="notice" role="status" style="margin-top:4px;width:100%"><div id="noticeText"></div><button class="x" id="noticeClose" aria-label="Đóng">×</button></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <a href="#" onclick="return false">Share feedback</a> · <a href="#" onclick="return false">Report issue</a>
+  <span>Backend giả lập theo BE scope (BE-04 validation, BE-06 response). Nối BE thật: <code>USE_MOCK=false</code>, <code>API_BASE</code>.</span>
+</footer>
+
+<script>
+/* ===== API layer (FE-05) — cùng contract với BE scope ===== */
+const USE_MOCK = true;
+const API_BASE = "http://localhost:8080";
+const MAX_FILE_BYTES = 1024 * 1024;
+const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+const CaesarService = {
+  normalize(k){ return ((k % 26) + 26) % 26; },
+  shift(text, k){
+    k = this.normalize(k); let out = "";
+    for (const ch of text){
+      const c = ch.charCodeAt(0);
+      if (c >= 65 && c <= 90)       out += String.fromCharCode((c - 65 + k) % 26 + 65);
+      else if (c >= 97 && c <= 122) out += String.fromCharCode((c - 97 + k) % 26 + 97);
+      else                          out += ch;
+    }
+    return out;
+  },
+  encrypt(t, k){ return this.shift(t, k); },
+  decrypt(t, k){ return this.shift(t, -k); },
+};
+const fail = (message) => ({ success:false, message });
+const ok = (result) => ({ success:true, result });
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
+function validateKey(key){
+  if (key === undefined || key === null || key === "") return "Thiếu khóa.";
+  if (!/^-?\d+$/.test(String(key).trim())) return "Khóa phải là số nguyên.";
+  return null;
+}
+const mockApi = {
+  async text(action, { text, key }){
+    await delay(400);
+    if (text == null || text.trim() === "") return fail("Văn bản không được để trống.");
+    const e = validateKey(key); if (e) return fail(e);
+    return ok(CaesarService[action](text, Number(key)));
+  },
+  async file({ file, key, action }){
+    await delay(550);
+    if (!file) return fail("Không có file.");
+    if (file.size === 0) return fail("File rỗng.");
+    if (!/\.txt$/i.test(file.name)) return fail("Chỉ hỗ trợ file .txt.");
+    if (file.size > MAX_FILE_BYTES) return fail("File vượt dung lượng cho phép (1 MB).");
+    if (action !== "encrypt" && action !== "decrypt") return fail("Action chỉ nhận encrypt hoặc decrypt.");
+    const e = validateKey(key); if (e) return fail(e);
+    let content; try { content = await file.text(); } catch { return fail("Không đọc được nội dung file."); }
+    return ok(CaesarService[action](content, Number(key)));
+  },
+};
+const realApi = {
+  async text(action, body){
+    const r = await fetch(`${API_BASE}/api/caesar/${action}`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    return r.json();
+  },
+  async file({ file, key, action }){
+    const fd = new FormData(); fd.append("file", file); fd.append("key", key); fd.append("action", action);
+    const r = await fetch(`${API_BASE}/api/caesar/file`, { method:"POST", body: fd });
+    return r.json();
+  },
+};
+const api = USE_MOCK ? mockApi : realApi;
+
+/* ===== UI ===== */
+const $ = id => document.getElementById(id);
+const state = { mode:"encrypt", inputType:"text", file:null, fileText:"", loading:false, result:null, view:"result" };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtSize = b => b < 1024 ? b + " B" : b < 1048576 ? (b/1024).toFixed(1) + " KB" : (b/1048576).toFixed(2) + " MB";
+
+/* tô màu như token của jwt.io: hoa / thường / còn lại */
+function colorize(text){
+  if (text.length > 20000) return esc(text);
+  let html = "", cls = null, buf = "";
+  const flush = () => { if (buf){ html += cls ? `<span class="${cls}">${esc(buf)}</span>` : esc(buf); buf = ""; } };
+  for (const ch of text){
+    const c = ch.charCodeAt(0);
+    const k = (c >= 65 && c <= 90) ? "u" : (c >= 97 && c <= 122) ? "l" : "o";
+    if (k !== cls){ flush(); cls = k; }
+    buf += ch;
+  }
+  flush(); return html + "\n";
+}
+function setBar(bar, text, kind){
+  bar.className = "vbar" + (kind ? " " + kind : "");
+  bar.querySelector(".dot").textContent = kind === "ok" ? "✓" : kind === "err" ? "!" : "·";
+  bar.querySelector("span:last-child").textContent = text;
+}
+function notify(kind, title, msg){ $("notice").className = "notice show " + kind; $("noticeText").innerHTML = `<b>${esc(title)}</b>${msg ? " — " + esc(msg) : ""}`; }
+function hideNotice(){ $("notice").className = "notice"; }
+
+const textInput = $("textInput"), hlPre = $("hlPre"), keyEl = $("key");
+const currentText = () => state.inputType === "text" ? textInput.value : state.fileText;
+const keyNorm = () => /^-?\d+$/.test(keyEl.value.trim()) ? CaesarService.normalize(Number(keyEl.value.trim())) : null;
+
+/* alphabet map */
+const fromCells = [], toCells = [];
+for (let i = 0; i < 26; i++){
+  const a = document.createElement("span"); a.textContent = A[i]; $("rowFrom").appendChild(a); fromCells.push(a);
+  const b = document.createElement("span"); $("rowTo").appendChild(b); toCells.push(b);
+}
+function renderMap(){
+  const k = keyNorm() ?? 0, enc = state.mode === "encrypt", used = {};
+  for (const ch of currentText().toUpperCase()){ const i = A.indexOf(ch); if (i >= 0) used[i] = true; }
+  for (let i = 0; i < 26; i++){
+    toCells[i].textContent = A[enc ? (i + k) % 26 : (i - k + 26) % 26];
+    fromCells[i].classList.toggle("hit", !!used[i]); toCells[i].classList.toggle("hit", !!used[i]);
+  }
+  $("lblFrom").textContent = enc ? "Bản rõ" : "Bản mã"; $("lblTo").textContent = enc ? "Bản mã" : "Bản rõ";
+  $("mapTitle").textContent = `Khóa ${k} · A → ${A[enc ? k : (26 - k) % 26]}`;
+}
+
+function validateInput(){
+  if (state.inputType === "text"){
+    const t = textInput.value;
+    if (t.trim() === ""){ setBar($("inputBar"), t.length ? "Văn bản chỉ có khoảng trắng" : "Chưa có dữ liệu", t.length ? "err" : ""); return false; }
+    setBar($("inputBar"), `Văn bản hợp lệ · ${t.length} ký tự · ${t.split(/\r?\n/).length} dòng`, "ok"); return true;
+  }
+  const f = state.file;
+  if (!f){ setBar($("inputBar"), "Chưa chọn file", ""); return false; }
+  if (!/\.txt$/i.test(f.name)){ setBar($("inputBar"), "Chỉ hỗ trợ file .txt", "err"); return false; }
+  if (f.size === 0){ setBar($("inputBar"), "File rỗng", "err"); return false; }
+  if (f.size > MAX_FILE_BYTES){ setBar($("inputBar"), "File vượt 1 MB", "err"); return false; }
+  setBar($("inputBar"), `File .txt hợp lệ · ${fmtSize(f.size)}`, "ok"); return true;
+}
+function validateKeyUI(){
+  const v = keyEl.value.trim();
+  if (v === ""){ setBar($("keyBar"), "Chưa nhập khóa", ""); $("keyNorm").textContent = ""; return false; }
+  if (!/^-?\d+$/.test(v)){ setBar($("keyBar"), "Khóa phải là số nguyên", "err"); $("keyNorm").textContent = ""; return false; }
+  const n = CaesarService.normalize(Number(v));
+  $("keyNorm").textContent = Number(v) === n ? "" : `chuẩn hóa → ${n}`;
+  setBar($("keyBar"), "Khóa hợp lệ", "ok"); return true;
+}
+function refresh(){
+  const enc = state.mode === "encrypt";
+  hlPre.innerHTML = colorize(textInput.value);
+  const inOk = validateInput(), keyOk = validateKeyUI();
+  const btn = $("action");
+  btn.disabled = state.loading || !(inOk && keyOk);
+  btn.innerHTML = state.loading ? '<span class="spin"></span>Đang xử lý…' : (enc ? "Mã hóa" : "Giải mã");
+  $("inputTitle").textContent = enc ? "Bản rõ (Plaintext)" : "Bản mã (Ciphertext)";
+  $("outputTitle").textContent = enc ? "Bản mã (Ciphertext)" : "Bản rõ (Plaintext)";
+  $("helperText").textContent = enc ? "Dán bản rõ bên dưới để mã hóa bằng hệ mật Caesar." : "Dán bản mã bên dưới để giải mã bằng hệ mật Caesar.";
+  const has = state.result !== null;
+  $("copyOutput").disabled = $("clearOutput").disabled = !has;
+  $("downloadOutput").style.display = has && state.inputType === "file" ? "" : "none";
+  $("downloadOutput").disabled = !has;
+  $("copyInput").disabled = currentText() === "";
+  $("copyKey").disabled = keyEl.value === "";
+  textInput.disabled = state.loading;
+  $("result").style.display = state.view === "result" ? "" : "none";
+  $("stats").style.display = state.view === "stats" ? "" : "none";
+  renderMap();
+}
+
+/* mode */
+[$("tabDecrypt"), $("tabEncrypt")].forEach(t => t.addEventListener("click", () => {
+  state.mode = t.dataset.mode;
+  $("tabDecrypt").setAttribute("aria-selected", state.mode === "decrypt");
+  $("tabEncrypt").setAttribute("aria-selected", state.mode === "encrypt");
+  hideNotice(); refresh();
+}));
+/* input type */
+function setInputType(type){
+  state.inputType = type;
+  $("typeText").setAttribute("aria-pressed", type === "text");
+  $("typeFile").setAttribute("aria-pressed", type === "file");
+  $("textWrap").style.display = type === "text" ? "" : "none";
+  $("fileWrap").style.display = type === "file" ? "" : "none";
+  hideNotice(); refresh();
+}
+$("typeText").addEventListener("click", () => setInputType("text"));
+$("typeFile").addEventListener("click", () => setInputType("file"));
+/* text */
+textInput.addEventListener("input", () => { hideNotice(); refresh(); });
+textInput.addEventListener("scroll", () => { hlPre.scrollTop = textInput.scrollTop; });
+new ResizeObserver(() => { hlPre.style.height = textInput.offsetHeight + "px"; }).observe(textInput);
+$("clearInput").addEventListener("click", () => { if (state.inputType === "text") textInput.value = ""; else removeFile(); hideNotice(); refresh(); textInput.focus(); });
+$("copyInput").addEventListener("click", () => copy(currentText(), "Đã copy đầu vào"));
+/* file */
+async function setFile(f){
+  state.file = f; state.fileText = "";
+  $("fileName").textContent = f.name; $("fileSize").textContent = fmtSize(f.size);
+  $("drop").style.display = "none"; $("fileCard").style.display = "";
+  const valid = /\.txt$/i.test(f.name) && f.size > 0 && f.size <= MAX_FILE_BYTES;
+  if (valid){ try { state.fileText = await f.text(); } catch {} }
+  $("filePreview").innerHTML = valid ? colorize(state.fileText.slice(0, 5000) + (state.fileText.length > 5000 ? "\n…" : "")) : "";
+  hideNotice(); refresh();
+}
+function removeFile(){ state.file = null; state.fileText = ""; $("fileInput").value = ""; $("drop").style.display = ""; $("fileCard").style.display = "none"; $("filePreview").innerHTML = ""; }
+$("pickFile").addEventListener("click", () => $("fileInput").click());
+$("changeFile").addEventListener("click", () => $("fileInput").click());
+$("removeFile").addEventListener("click", () => { removeFile(); hideNotice(); refresh(); });
+$("fileInput").addEventListener("change", () => { const f = $("fileInput").files[0]; if (f) setFile(f); });
+["dragenter","dragover"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave","drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) setFile(f); });
+/* key */
+keyEl.addEventListener("input", () => { hideNotice(); refresh(); });
+$("clearKey").addEventListener("click", () => { keyEl.value = ""; refresh(); keyEl.focus(); });
+$("copyKey").addEventListener("click", () => copy(keyEl.value, "Đã copy khóa"));
+$("example").addEventListener("click", () => { setInputType("text"); textInput.value = "Hello World"; keyEl.value = "3"; refresh(); $("action").focus(); });
+/* output */
+document.querySelectorAll('#outputPanel .tabs button').forEach(b => b.addEventListener("click", () => {
+  state.view = b.dataset.view;
+  document.querySelectorAll('#outputPanel .tabs button').forEach(x => x.setAttribute("aria-selected", x === b));
+  refresh();
+}));
+function showResult(text, src){
+  state.result = text;
+  $("result").innerHTML = colorize(text); $("result").classList.remove("empty");
+  let up = 0, lo = 0, ot = 0; for (const ch of src){ const c = ch.charCodeAt(0); if (c >= 65 && c <= 90) up++; else if (c >= 97 && c <= 122) lo++; else ot++; }
+  const k = keyNorm();
+  $("stats").innerHTML = [
+    ["Chế độ", state.mode === "encrypt" ? "encrypt" : "decrypt"],
+    ["Nguồn", state.inputType === "text" ? "text" : `file · ${state.file.name}`],
+    ["Khóa nhập / chuẩn hóa", `${keyEl.value.trim()} / ${k}`],
+    ["Tổng ký tự", src.length],
+    ["Chữ hoa dịch chuyển", up], ["Chữ thường dịch chuyển", lo], ["Ký tự giữ nguyên", ot],
+  ].map(([a, b]) => `<div><span>${esc(a)}</span><span>${esc(b)}</span></div>`).join("");
+}
+$("clearOutput").addEventListener("click", () => { state.result = null; $("result").textContent = "Kết quả sẽ hiển thị ở đây sau khi xử lý"; $("result").classList.add("empty"); $("stats").innerHTML = ""; setBar($("outputBar"), "Chưa xử lý", ""); hideNotice(); refresh(); });
+$("copyOutput").addEventListener("click", () => copy(state.result, "Đã copy kết quả"));
+$("downloadOutput").addEventListener("click", () => {
+  const base = state.file ? state.file.name.replace(/\.txt$/i, "") : "result";
+  const url = URL.createObjectURL(new Blob([state.result], { type:"text/plain;charset=utf-8" }));
+  Object.assign(document.createElement("a"), { href:url, download:`${base}_${state.mode === "encrypt" ? "encrypted" : "decrypted"}.txt` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+async function copy(text, msg){ try { await navigator.clipboard.writeText(text); notify("ok", msg); } catch { notify("warn", "Không copy được", "Trình duyệt chặn clipboard, hãy copy thủ công."); } }
+$("noticeClose").addEventListener("click", hideNotice);
+/* action */
+$("action").addEventListener("click", async () => {
+  if ($("action").disabled) return;
+  state.loading = true; hideNotice(); refresh(); setBar($("outputBar"), "Đang gửi yêu cầu…", "");
+  const key = keyEl.value.trim(), src = currentText();
+  let res = null;
+  try { res = state.inputType === "text" ? await api.text(state.mode, { text: textInput.value, key: Number(key) }) : await api.file({ file: state.file, key, action: state.mode }); } catch {}
+  state.loading = false;
+  const label = state.mode === "encrypt" ? "Mã hóa" : "Giải mã";
+  if (!res){ setBar($("outputBar"), "Không kết nối được máy chủ", "err"); notify("err", "Network error", "Không kết nối được tới máy chủ."); }
+  else if (res.success){ showResult(res.result, src); setBar($("outputBar"), `${label} thành công · ${res.result.length} ký tự`, "ok"); notify("ok", `${label} thành công`, state.inputType === "file" ? "Tải kết quả về bằng nút Download." : ""); }
+  else { setBar($("outputBar"), `${label} thất bại`, "err"); notify("err", `${label} thất bại`, res.message || "Server error"); }
+  refresh();
+});
+refresh();
+</script>
+</body>
+</html>

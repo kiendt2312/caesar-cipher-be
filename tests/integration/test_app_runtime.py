@@ -1,0 +1,109 @@
+"""Runtime-serving tests for the single-process Caesar Cipher application.
+
+These tests exercise the app the way the DOCX §7 acceptance criteria observe
+it: a single process that serves the web UI, static assets, interactive API
+docs and the JSON API all on one origin, with stateless request handling.
+They run against the real FastAPI app via TestClient (no Docker required).
+"""
+
+import re
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+
+def test_root_serves_the_web_ui() -> None:
+    with TestClient(app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
+def test_docs_serves_interactive_api_documentation() -> None:
+    with TestClient(app) as client:
+        response = client.get("/docs")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "swagger" in response.text.lower()
+
+
+def test_openapi_schema_lists_all_caesar_endpoints() -> None:
+    with TestClient(app) as client:
+        schema = client.get("/openapi.json")
+    assert schema.status_code == 200
+    paths = set(schema.json()["paths"])
+    assert {"/api/caesar/encrypt", "/api/caesar/decrypt", "/api/caesar/file"} <= paths
+
+
+def test_static_assets_are_served_by_the_same_application() -> None:
+    with TestClient(app) as client:
+        styles = client.get("/static/styles.css")
+        script = client.get("/static/app.js")
+    assert styles.status_code == 200
+    assert styles.headers["content-type"].startswith("text/css")
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
+
+
+def test_ui_makes_only_same_origin_api_calls() -> None:
+    with TestClient(app) as client:
+        page = client.get("/")
+        script = client.get("/static/app.js")
+    assert "localhost:" not in page.text
+    assert "8080" not in page.text
+    assert "localhost:" not in script.text
+    assert "8080" not in script.text
+    base = "http://testserver"
+    for url in re.findall(r'(?:href|src)="([^"]+)"', page.text):
+        assert url.startswith("/") or url.startswith(base), url
+
+
+def test_api_responses_need_no_cors_headers() -> None:
+    with TestClient(app) as client:
+        response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+        docs = client.get("/docs")
+    for headers in (response.headers, docs.headers):
+        assert "access-control-allow-origin" not in headers
+
+
+def test_identical_requests_produce_identical_results() -> None:
+    payload = {"text": "Hello World", "key": 3}
+    with TestClient(app) as client:
+        first = client.post("/api/caesar/encrypt", json=payload)
+        second = client.post("/api/caesar/encrypt", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json() == {"success": True, "result": "Khoor Zruog"}
+
+
+def test_result_does_not_depend_on_previous_requests() -> None:
+    with TestClient(app) as client:
+        client.post("/api/caesar/encrypt", json={"text": "AAAA", "key": 1})
+        after = client.post("/api/caesar/encrypt", json={"text": "Hello", "key": 3})
+        control = client.post("/api/caesar/encrypt", json={"text": "Hello", "key": 3})
+    assert after.json() == control.json() == {"success": True, "result": "Khoor"}
+
+
+def test_no_session_cookie_or_stored_state_is_created() -> None:
+    with TestClient(app) as client:
+        page = client.get("/")
+        response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+    for headers in (page.headers, response.headers):
+        assert "set-cookie" not in headers
+
+
+def test_no_route_exposes_history_or_previous_results() -> None:
+    with TestClient(app) as client:
+        schema = client.get("/openapi.json")
+        missing = client.get("/api/caesar/encrypt")
+    for path in schema.json()["paths"]:
+        assert not any(token in path.lower() for token in ("history", "record", "log", "session"))
+    assert missing.status_code == 405
+
+
+def test_single_process_serves_every_asset_the_ui_references() -> None:
+    with TestClient(app) as client:
+        page = client.get("/")
+        for url in re.findall(r'(?:href|src)="([^"]+)"', page.text):
+            path = url.removeprefix("http://testserver")
+            assert client.get(path).status_code == 200, path

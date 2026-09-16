@@ -1,0 +1,28 @@
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+
+# Version control
+.git/
+.gitignore
+
+# Development tooling and docs not required in the image
+.claude/
+openspec/
+tests/
+docs/
+paseo.json
+
+# Source-only artifacts (not needed at runtime)
+*.docx
+Caesar_Cipher_Tool_Demo.html
+
+# Keep: app/ recursively (templates, static and Python modules are copied into the image)

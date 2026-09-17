@@ -27,6 +27,36 @@ class InvalidKeyError(CaesarError):
         super().__init__(422, messages.INVALID_KEY)
 
 
+class InvalidStringKeyError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_STRING_KEY)
+
+
+class InvalidVigenereKeyError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_VIGENERE_KEY)
+
+
+class InvalidPlayfairKeyError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_PLAYFAIR_KEY)
+
+
+class EmptyPlayfairTextError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.PLAYFAIR_TEXT_EMPTY)
+
+
+class OddPlayfairCiphertextError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.PLAYFAIR_CIPHERTEXT_ODD)
+
+
+class DuplicatePlayfairDigraphError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.PLAYFAIR_DUPLICATE_DIGRAPH)
+
+
 class MissingFileError(CaesarError):
     def __init__(self) -> None:
         super().__init__(422, messages.MISSING_FILE)

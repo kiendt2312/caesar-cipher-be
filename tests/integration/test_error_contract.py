@@ -11,15 +11,21 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.errors import messages
 from app.errors.exceptions import (
     CaesarError,
+    DuplicatePlayfairDigraphError,
     EmptyFileError,
+    EmptyPlayfairTextError,
     EmptyTextError,
     FileReadError,
     FileTooLargeError,
     InvalidActionError,
     InvalidKeyError,
+    InvalidPlayfairKeyError,
     InvalidResponseModeError,
+    InvalidStringKeyError,
+    InvalidVigenereKeyError,
     MissingFileError,
     MissingKeyError,
+    OddPlayfairCiphertextError,
     UnsupportedEncodingError,
     UnsupportedFileTypeError,
 )
@@ -46,6 +52,30 @@ def _build_error_app() -> FastAPI:
     @app.get("/errors/invalid-key")
     async def invalid_key() -> None:
         raise InvalidKeyError()
+
+    @app.get("/errors/invalid-string-key")
+    async def invalid_string_key() -> None:
+        raise InvalidStringKeyError()
+
+    @app.get("/errors/invalid-vigenere-key")
+    async def invalid_vigenere_key() -> None:
+        raise InvalidVigenereKeyError()
+
+    @app.get("/errors/invalid-playfair-key")
+    async def invalid_playfair_key() -> None:
+        raise InvalidPlayfairKeyError()
+
+    @app.get("/errors/empty-playfair-text")
+    async def empty_playfair_text() -> None:
+        raise EmptyPlayfairTextError()
+
+    @app.get("/errors/odd-playfair-ciphertext")
+    async def odd_playfair_ciphertext() -> None:
+        raise OddPlayfairCiphertextError()
+
+    @app.get("/errors/duplicate-playfair-digraph")
+    async def duplicate_playfair_digraph() -> None:
+        raise DuplicatePlayfairDigraphError()
 
     @app.get("/errors/missing-file")
     async def missing_file() -> None:
@@ -81,7 +111,7 @@ def _build_error_app() -> FastAPI:
 
     @app.post("/errors/unexpected")
     async def unexpected() -> None:
-        raise RuntimeError("unexpected failure")
+        raise RuntimeError("request-body-secret file-secret result-secret")
 
     @app.post("/errors/request-validation")
     async def request_validation(payload: ValidationPayload) -> ValidationPayload:
@@ -139,6 +169,23 @@ def test_canonical_missing_key_error(error_client: TestClient) -> None:
 # Canonical row 3/13: Key không phải số nguyên.
 def test_canonical_invalid_key_error(error_client: TestClient) -> None:
     _assert_error(error_client, "/errors/invalid-key", 422, messages.INVALID_KEY)
+
+
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [
+        ("/errors/invalid-string-key", messages.INVALID_STRING_KEY),
+        ("/errors/invalid-vigenere-key", messages.INVALID_VIGENERE_KEY),
+        ("/errors/invalid-playfair-key", messages.INVALID_PLAYFAIR_KEY),
+        ("/errors/empty-playfair-text", messages.PLAYFAIR_TEXT_EMPTY),
+        ("/errors/odd-playfair-ciphertext", messages.PLAYFAIR_CIPHERTEXT_ODD),
+        ("/errors/duplicate-playfair-digraph", messages.PLAYFAIR_DUPLICATE_DIGRAPH),
+    ],
+)
+def test_additional_cipher_errors_use_exact_two_field_envelope(
+    error_client: TestClient, path: str, message: str
+) -> None:
+    _assert_error(error_client, path, 422, message)
 
 
 # Canonical row 4/13: missing-file mapping.

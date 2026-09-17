@@ -10,6 +10,14 @@ from starlette.types import Message as ASGIMessage
 from app import config
 from app.errors import messages
 
+FILE_ROUTE_PATHS = frozenset(
+    {
+        "/api/caesar/file",
+        "/api/vigenere/file",
+        "/api/playfair/file",
+    }
+)
+
 
 def _content_length(scope: Scope) -> bytes | None:
     """Return the sole Content-Length value, or None when it is unusable."""
@@ -33,7 +41,7 @@ def _header(scope: Scope, target: bytes) -> bytes | None:
 def _multipart_boundary(scope: Scope) -> bytes | None:
     """Return the declared multipart boundary for the file endpoint, if any."""
 
-    if scope.get("method") != "POST" or scope.get("path") != "/api/caesar/file":
+    if scope.get("method") != "POST" or scope.get("path") not in FILE_ROUTE_PATHS:
         return None
 
     content_type = _header(scope, b"content-type")
@@ -72,7 +80,7 @@ def _exceeds_limit(value: bytes | None, max_bytes: int) -> bool:
 def _request_too_large_message(scope: Scope) -> str:
     """Select the public 413 message from the route, never from Content-Type."""
 
-    if scope.get("path") == "/api/caesar/file":
+    if scope.get("path") in FILE_ROUTE_PATHS:
         return messages.FILE_TOO_LARGE
     return messages.REQUEST_TOO_LARGE
 

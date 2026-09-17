@@ -8,18 +8,27 @@ from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.core.playfair import normalize_keyword as normalize_playfair_keyword
+from app.core.playfair import normalize_text as normalize_playfair_text
 from app.errors.exceptions import (
+    DuplicatePlayfairDigraphError,
+    EmptyPlayfairTextError,
     EmptyTextError,
     InvalidActionError,
     InvalidKeyError,
+    InvalidPlayfairKeyError,
     InvalidRequestBodyError,
     InvalidResponseModeError,
+    InvalidStringKeyError,
+    InvalidVigenereKeyError,
     MissingKeyError,
+    OddPlayfairCiphertextError,
 )
 
 MISSING: Final = object()
 MULTIPART_KEY_MAX_LENGTH = 32
 _MULTIPART_KEY_PATTERN = re.compile(r"^[+-]?[0-9]+$")
+_VIGENERE_KEY_PATTERN = re.compile(r"^[A-Za-z]+$")
 
 
 class JsonIntegerToken(str):
@@ -42,6 +51,18 @@ class TextCipherRequest(BaseModel):
 
     text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
     key: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
+
+
+class StringKeyCipherRequest(BaseModel):
+    """Raw JSON fields for ciphers whose key contract is a string."""
+
+    model_config = ConfigDict(
+        extra="ignore",
+        json_schema_extra={"required": ["text", "key"]},
+    )
+
+    text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
+    key: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
 
 
 class TextCipherResponse(BaseModel):
@@ -92,6 +113,30 @@ def decode_text_request(raw: bytes, content_type: str | None) -> TextCipherReque
         if type(decoded) is not dict:
             raise InvalidRequestBodyError()
         return TextCipherRequest.model_validate(decoded)
+    except InvalidRequestBodyError:
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
+        raise InvalidRequestBodyError() from exc
+
+
+def decode_string_key_request(raw: bytes, content_type: str | None) -> StringKeyCipherRequest:
+    """Decode a JSON object without coercing either string-key cipher field."""
+
+    media_type = content_type.partition(";")[0].strip().lower() if content_type else ""
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise InvalidRequestBodyError()
+
+    try:
+        decoded = json.loads(
+            raw,
+            parse_int=JsonIntegerToken,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
+        if type(decoded) is not dict:
+            raise InvalidRequestBodyError()
+        return StringKeyCipherRequest.model_validate(decoded)
     except InvalidRequestBodyError:
         raise
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
@@ -152,3 +197,80 @@ def validate_text_request(payload: TextCipherRequest) -> tuple[str, int]:
     if payload.text is MISSING or type(payload.text) is not str or payload.text == "":
         raise EmptyTextError()
     return payload.text, parse_key(payload.key)
+
+
+def _parse_string_key(value: Any) -> str:
+    if value is MISSING or value is None or (type(value) is str and value == ""):
+        raise MissingKeyError()
+    if type(value) is not str:
+        raise InvalidStringKeyError()
+    return value
+
+
+def _validate_algorithm_key(key: str, cipher: Literal["vigenere", "playfair"]) -> None:
+    if cipher == "vigenere":
+        if _VIGENERE_KEY_PATTERN.fullmatch(key) is None:
+            raise InvalidVigenereKeyError()
+        return
+
+    try:
+        normalize_playfair_keyword(key)
+    except ValueError as exc:
+        raise InvalidPlayfairKeyError() from exc
+
+
+def validate_playfair_content(text: str, operation: str) -> None:
+    """Apply Playfair validation that follows key and transport validation."""
+
+    normalized = normalize_playfair_text(text)
+    if not normalized:
+        raise EmptyPlayfairTextError()
+    if operation == "decrypt":
+        if len(normalized) % 2:
+            raise OddPlayfairCiphertextError()
+        if any(
+            normalized[index] == normalized[index + 1] for index in range(0, len(normalized), 2)
+        ):
+            raise DuplicatePlayfairDigraphError()
+
+
+def validate_additional_text_request(
+    payload: StringKeyCipherRequest,
+    cipher: Literal["vigenere", "playfair"],
+    operation: Literal["encrypt", "decrypt"],
+) -> tuple[str, str]:
+    """Validate a string-key text request in the contract-defined order."""
+
+    if payload.text is MISSING or type(payload.text) is not str or payload.text == "":
+        raise EmptyTextError()
+    key = _parse_string_key(payload.key)
+    _validate_algorithm_key(key, cipher)
+    if cipher == "playfair":
+        validate_playfair_content(payload.text, operation)
+    return payload.text, key
+
+
+def validate_additional_file_form_fields(
+    key: Any,
+    action: Any,
+    response_mode: Any,
+    cipher: Literal["vigenere", "playfair"],
+) -> tuple[str, Literal["encrypt", "decrypt"], Literal["content", "file"]]:
+    """Validate new cipher multipart fields in the accepted precedence order."""
+
+    parsed_key = _parse_string_key(key)
+    if action is MISSING or action is None:
+        raise InvalidActionError()
+
+    _validate_algorithm_key(parsed_key, cipher)
+    if action not in ("encrypt", "decrypt"):
+        raise InvalidActionError()
+
+    if response_mode is MISSING or response_mode is None:
+        parsed_response_mode = "content"
+    elif response_mode not in ("content", "file"):
+        raise InvalidResponseModeError()
+    else:
+        parsed_response_mode = response_mode
+
+    return parsed_key, action, parsed_response_mode

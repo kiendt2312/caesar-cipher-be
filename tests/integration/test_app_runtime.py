@@ -33,7 +33,17 @@ def test_openapi_schema_lists_all_caesar_endpoints() -> None:
         schema = client.get("/openapi.json")
     assert schema.status_code == 200
     paths = set(schema.json()["paths"])
-    assert {"/api/caesar/encrypt", "/api/caesar/decrypt", "/api/caesar/file"} <= paths
+    assert {
+        "/api/caesar/encrypt",
+        "/api/caesar/decrypt",
+        "/api/caesar/file",
+        "/api/vigenere/encrypt",
+        "/api/vigenere/decrypt",
+        "/api/vigenere/file",
+        "/api/playfair/encrypt",
+        "/api/playfair/decrypt",
+        "/api/playfair/file",
+    } <= paths
 
 
 def test_static_assets_are_served_by_the_same_application() -> None:
@@ -62,8 +72,9 @@ def test_ui_makes_only_same_origin_api_calls() -> None:
 def test_api_responses_need_no_cors_headers() -> None:
     with TestClient(app) as client:
         response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+        vigenere = client.post("/api/vigenere/encrypt", json={"text": "Attack", "key": "LEMON"})
         docs = client.get("/docs")
-    for headers in (response.headers, docs.headers):
+    for headers in (response.headers, vigenere.headers, docs.headers):
         assert "access-control-allow-origin" not in headers
 
 
@@ -82,6 +93,35 @@ def test_result_does_not_depend_on_previous_requests() -> None:
         after = client.post("/api/caesar/encrypt", json={"text": "Hello", "key": 3})
         control = client.post("/api/caesar/encrypt", json={"text": "Hello", "key": 3})
     assert after.json() == control.json() == {"success": True, "result": "Khoor"}
+
+
+def test_additional_cipher_results_are_stateless() -> None:
+    vigenere_payload = {"text": "Attack at dawn!", "key": "LEMON"}
+    playfair_payload = {"text": "HIDE THE GOLD", "key": "PLAYFAIR EXAMPLE"}
+    with TestClient(app) as client:
+        vigenere_first = client.post("/api/vigenere/encrypt", json=vigenere_payload)
+        client.post("/api/playfair/encrypt", json={"text": "XX", "key": "MONARCHY"})
+        vigenere_second = client.post("/api/vigenere/encrypt", json=vigenere_payload)
+        playfair_first = client.post("/api/playfair/encrypt", json=playfair_payload)
+        client.post("/api/vigenere/encrypt", json={"text": "AAAA", "key": "B"})
+        playfair_second = client.post("/api/playfair/encrypt", json=playfair_payload)
+
+    assert (
+        vigenere_first.json()
+        == vigenere_second.json()
+        == {
+            "success": True,
+            "result": "Lxfopv ef rnhr!",
+        }
+    )
+    assert (
+        playfair_first.json()
+        == playfair_second.json()
+        == {
+            "success": True,
+            "result": "BMODZBXDNAGE",
+        }
+    )
 
 
 def test_no_session_cookie_or_stored_state_is_created() -> None:

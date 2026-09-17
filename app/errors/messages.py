@@ -7,6 +7,12 @@ application's exception classes and HTTP adapters.
 TEXT_EMPTY = "Văn bản không được để trống."
 MISSING_KEY = "Thiếu khóa."
 INVALID_KEY = "Khóa phải là số nguyên."
+INVALID_STRING_KEY = "Khóa phải là chuỗi."
+INVALID_VIGENERE_KEY = "Khóa Vigenère chỉ được chứa chữ cái A-Z hoặc a-z."
+INVALID_PLAYFAIR_KEY = "Khóa Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z."
+PLAYFAIR_TEXT_EMPTY = "Văn bản Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z."
+PLAYFAIR_CIPHERTEXT_ODD = "Bản mã Playfair phải chứa số lượng chữ cái chẵn."
+PLAYFAIR_DUPLICATE_DIGRAPH = "Bản mã Playfair không được chứa cặp hai chữ cái giống nhau."
 MISSING_FILE = "Thiếu file."
 EMPTY_FILE = "File không được để trống."
 UNSUPPORTED_FILE_TYPE = "Chỉ chấp nhận file .txt."
@@ -31,6 +37,12 @@ CANONICAL_MESSAGES = (
     TEXT_EMPTY,
     MISSING_KEY,
     INVALID_KEY,
+    INVALID_STRING_KEY,
+    INVALID_VIGENERE_KEY,
+    INVALID_PLAYFAIR_KEY,
+    PLAYFAIR_TEXT_EMPTY,
+    PLAYFAIR_CIPHERTEXT_ODD,
+    PLAYFAIR_DUPLICATE_DIGRAPH,
     MISSING_FILE,
     EMPTY_FILE,
     UNSUPPORTED_FILE_TYPE,

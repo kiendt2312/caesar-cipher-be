@@ -1,6 +1,7 @@
 """HTTP adapters for application and framework exceptions."""
 
 import logging
+import traceback
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
@@ -23,13 +24,18 @@ def _error_response(status_code: int, message: str) -> JSONResponse:
 
 def _log_server_error(request: Request, exc: Exception) -> None:
     timestamp = datetime.now(UTC).isoformat()
+    frames = traceback.extract_tb(exc.__traceback__)
+    safe_traceback = "\n".join(
+        f'  File "{frame.filename}", line {frame.lineno}, in {frame.name}' for frame in frames
+    )
     logger.error(
-        "Server exception type=%s method=%s path=%s time=%s",
+        "Server exception type=%s method=%s path=%s time=%s\n"
+        "Traceback (most recent call last):\n%s",
         type(exc).__name__,
         request.method,
         request.url.path,
         timestamp,
-        exc_info=(type(exc), exc, exc.__traceback__),
+        safe_traceback or "  <unavailable>",
     )
 
 

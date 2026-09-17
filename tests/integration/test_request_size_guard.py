@@ -102,7 +102,14 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
     ("path", "expected_message"),
     [
         ("/api/caesar/file", messages.FILE_TOO_LARGE),
+        ("/api/vigenere/file", messages.FILE_TOO_LARGE),
+        ("/api/playfair/file", messages.FILE_TOO_LARGE),
         ("/api/caesar/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/vigenere/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/vigenere/decrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/playfair/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/playfair/decrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/not-a-file-route", messages.REQUEST_TOO_LARGE),
         ("/docs", messages.REQUEST_TOO_LARGE),
     ],
 )
@@ -192,9 +199,14 @@ def test_oversized_decimal_with_leading_zeros_is_rejected_without_integer_conver
         (b"field value\r\n--stream-boundary--\r\n", True),
     ],
 )
+@pytest.mark.parametrize(
+    "path",
+    ["/api/caesar/file", "/api/vigenere/file", "/api/playfair/file"],
+)
 def test_multipart_completion_requires_a_line_delimited_closing_boundary(
     ending: bytes,
     expected: bool,
+    path: str,
 ) -> None:
     observed: list[bool] = []
     chunks = [b"x"] * 64 + [ending]
@@ -218,9 +230,32 @@ def test_multipart_completion_requires_a_line_delimited_closing_boundary(
         async def send(message: Message) -> None:
             del message
 
-        scope = _scope([(b"content-type", b"multipart/form-data; boundary=stream-boundary")])
+        scope = _scope(
+            [(b"content-type", b"multipart/form-data; boundary=stream-boundary")],
+            path,
+        )
         await MultipartCompletionGuard(downstream)(scope, receive, send)
 
     asyncio.run(exercise())
 
     assert observed == [expected]
+
+
+def test_multipart_completion_guard_ignores_routes_outside_exact_file_set() -> None:
+    scope_keys: list[bool] = []
+
+    async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
+        scope_keys.append(MultipartCompletionGuard.SCOPE_KEY in scope)
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    events, receive_calls = _run_asgi(
+        MultipartCompletionGuard(downstream),
+        [(b"content-type", b"multipart/form-data; boundary=stream-boundary")],
+        "/api/vigenere/encrypt",
+    )
+
+    assert scope_keys == [False]
+    assert receive_calls == 1
+    assert events[0]["status"] == 200

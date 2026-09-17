@@ -8,6 +8,8 @@ README này ưu tiên giúp người đọc **hiểu thuật toán và luồng b
 đó mới hướng dẫn cài đặt và chạy dự án. Đây là ứng dụng học tập, không phải công
 cụ bảo vệ dữ liệu nhạy cảm.
 
+Đội Frontend xem [handoff tích hợp và hành vi](repo_docs/frontend-integration.md).
+
 ## 1. Hệ thống làm gì?
 
 Mỗi yêu cầu có ba dữ liệu chính:

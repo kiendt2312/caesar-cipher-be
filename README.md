@@ -1,4 +1,4 @@
-# Caesar Cipher — Week 1 MVP
+# Caesar Cipher 
 
 Ứng dụng web minh họa Caesar Cipher bằng **FastAPI**. Người dùng có thể mã hóa
 hoặc giải mã văn bản nhập trực tiếp và file `.txt`, xem kết quả trên giao diện,

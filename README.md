@@ -1,267 +1,293 @@
-# Caesar Cipher 
+# Backend Caesar, Vigenère và Playfair
 
-Ứng dụng web minh họa Caesar Cipher bằng **FastAPI**. Người dùng có thể mã hóa
-hoặc giải mã văn bản nhập trực tiếp và file `.txt`, xem kết quả trên giao diện,
-sao chép hoặc tải kết quả xuống.
+Backend FastAPI cung cấp API mã hóa/giải mã cho ba thuật toán cổ điển:
+**Caesar**, **Vigenère** và **Playfair**. API nhận văn bản JSON hoặc file `.txt`,
+trả kết quả xem trước dạng JSON hoặc file đính kèm do server tạo.
 
-README này ưu tiên giúp người đọc **hiểu thuật toán và luồng bài toán trước**, sau
-đó mới hướng dẫn cài đặt và chạy dự án. Đây là ứng dụng học tập, không phải công
-cụ bảo vệ dữ liệu nhạy cảm.
+Đây là dự án học tập, không phải công cụ bảo vệ dữ liệu nhạy cảm. Server là nguồn
+có thẩm quyền cho validation và kết quả cipher. Với nguồn file upload, server còn
+quyết định bytes/BOM và tên attachment; với nguồn text, client có thể tạo file từ
+chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để hỗ trợ trải nghiệm.
 
-Đội Frontend xem [handoff tích hợp và hành vi](repo_docs/frontend-integration.md).
+Đội Frontend nên bắt đầu từ
+[`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
+consumer contract chi tiết cho cả 9 endpoint.
 
-## 1. Hệ thống làm gì?
+## 1. Tổng quan hành vi
 
-Mỗi yêu cầu có ba dữ liệu chính:
+Ứng dụng chạy stateless trong một tiến trình FastAPI trên cổng `8000`. Runtime
+phục vụ API, OpenAPI và UI static cùng origin; không có database, authentication,
+session hoặc lịch sử thao tác, và không lưu input, key, file hay kết quả sau request.
 
 ```text
-văn bản + khóa số nguyên + thao tác encrypt/decrypt
-                         │
-                         ▼
-                chuẩn hóa khóa modulo 26
-                         │
-                         ▼
-          dịch các chữ cái ASCII A–Z và a–z
-                         │
-                         ▼
-              giữ nguyên mọi ký tự còn lại
+JSON text hoặc multipart .txt
+              │
+              ▼
+ request guards + validation xác định
+              │
+              ▼
+   Caesar | Vigenère | Playfair core
+              │
+              ▼
+ JSON hai trường hoặc attachment UTF-8
 ```
 
-Hai nguồn đầu vào — văn bản và file — dùng chung một Caesar Core phía server.
-Giao diện chỉ kiểm tra sơ bộ, gọi API và hiển thị phản hồi; kết quả chính thức
-luôn do server tính.
+UI static đi kèm tại `/` là UI Caesar-only từ phạm vi Week 1. Nó không đại diện
+cho toàn bộ khả năng API; Frontend ba thuật toán hiện hành là consumer tách biệt.
 
-Ứng dụng chạy stateless trong một tiến trình: cùng một FastAPI app phục vụ UI,
-tài nguyên tĩnh, tài liệu API và các endpoint trên cùng origin. Không có database,
-session hoặc lịch sử thao tác; phía server không lưu input, file hay kết quả sau request.
+## 2. Ba thuật toán
 
-## 2. Thuật toán Caesar
+### 2.1 Caesar
 
-Đánh số mỗi chữ cái trong một dải từ `0` đến `25`, ví dụ `A/a = 0`, `B/b = 1`,
-..., `Z/z = 25`. Với khóa người dùng nhập là `k`, hệ thống chuẩn hóa khóa thành:
+Caesar dùng key số nguyên. Server chuẩn hóa key bằng modulo 26:
 
 ```text
 k' = ((k mod 26) + 26) mod 26
+Encrypt: E(x) = (x + k') mod 26
+Decrypt: D(x) = (x - k') mod 26
 ```
 
-Cách viết này luôn đưa `k'` về khoảng `0–25`, kể cả khi `k` âm.
-
-Với chỉ số chữ cái là `x`:
+Chỉ ASCII `A-Z`/`a-z` bị dịch vòng và vẫn giữ case. Số, dấu câu, whitespace,
+LF/CRLF, chữ có dấu, emoji và Unicode ngoài ASCII được giữ nguyên.
 
 ```text
-Mã hóa:  E(x) = (x + k') mod 26
-Giải mã: D(x) = (x - k') mod 26
+Hello World + key 3  → Khoor Zruog
+Khoor Zruog + key 3 → Hello World
+Xin chào! Zz + key 29 → Alq fkàr! Cc
 ```
 
-Giải mã bằng khóa `k` vì thế tương đương dịch theo `-k`. Khi vượt cuối hoặc đầu
-bảng chữ cái, phép tính modulo làm ký tự quay vòng: `Z + 1 → A`, `A - 1 → Z`.
+Key text phải là JSON integer thực sự; boolean, float và chuỗi số đều bị từ chối.
+Key âm, `0`, lớn hơn `25` và integer rất lớn vẫn hợp lệ.
 
-### Ký tự nào thay đổi?
+### 2.2 Vigenère repeating-key
 
-| Nhóm ký tự | Hành vi |
-|---|---|
-| ASCII `A–Z` | Dịch vòng trong dải chữ hoa |
-| ASCII `a–z` | Dịch vòng trong dải chữ thường |
-| Số, dấu câu, khoảng trắng, tab, xuống dòng | Giữ nguyên |
-| Tiếng Việt có dấu, emoji và Unicode ngoài ASCII | Giữ nguyên |
+Vigenère dùng key chuỗi không rỗng, khớp toàn bộ `[A-Za-z]+`. Server chuẩn hóa
+key sang uppercase rồi lặp key trên các chữ cái ASCII của input.
 
-Chữ hoa sau khi dịch vẫn là chữ hoa, chữ thường vẫn là chữ thường. Vị trí và
-thứ tự của mọi ký tự không phải chữ cái ASCII không thay đổi.
-
-### Ví dụ chuẩn
+- Chỉ `A-Z`/`a-z` bị biến đổi và tiêu thụ một vị trí key.
+- Case của input được giữ nguyên.
+- Whitespace, CRLF, số, dấu câu và Unicode ngoài ASCII được giữ nguyên và không
+  làm key tiến lên.
 
 ```text
-Input:   Hello World
-Key:     3
-Encrypt: Khoor Zruog
-Decrypt: Hello World
+Attack at dawn! + LEMON → Lxfopv ef rnhr!
+Lxfopv ef rnhr! + LEMON → Attack at dawn!
+AéA + BC → BéC
 ```
 
-### Ví dụ có chuẩn hóa khóa và Unicode
+### 2.3 Playfair canonical 5×5
+
+Playfair dùng biến thể 5×5 xác định của dự án:
+
+1. Keyword được uppercase theo ASCII, chỉ giữ `A-Z`, đổi `J → I`, rồi loại ký tự
+   trùng nhưng giữ lần xuất hiện đầu tiên.
+2. Matrix được điền theo hàng bằng keyword đã chuẩn hóa, sau đó bằng alphabet
+   `A-Z` bỏ `J`.
+3. Plaintext được uppercase theo ASCII, bỏ mọi ký tự ngoài ASCII letter và đổi
+   `J → I`.
+4. Plaintext được chia thành digraph. Cặp lặp hoặc ký tự cuối lẻ nhận filler `X`;
+   nếu ký tự đang xử lý là `X`, filler fallback là `Q` để tránh cặp `XX`.
+5. Từng digraph áp dụng quy tắc cùng hàng, cùng cột hoặc hình chữ nhật, có wrap.
+
+Matrix cho key `PLAYFAIR EXAMPLE`:
 
 ```text
-Input:   Xin chào! Zz 123
-Key:     29 → chuẩn hóa thành 3
-Encrypt: Alq fkàr! Cc 123
+P L A Y F
+I R E X M
+B C D G H
+K N O Q S
+T U V W Z
 ```
 
-Trong ví dụ này, các chữ ASCII trong `Xin`, `chào` và `Zz` được dịch. Ký tự `à`,
-dấu câu, khoảng trắng và số được giữ nguyên. Giải mã kết quả với cùng khóa `29`
-trả lại chính xác input ban đầu.
+Các vector chuẩn:
 
-Một số khóa tương đương:
+| Thao tác | Input | Prepared/normalized | Result |
+|---|---|---|---|
+| Encrypt | `HIDE THE GOLD IN THE TREE STUMP` | `HIDETHEGOLDINTHETREXESTUMP` | `BMODZBXDNABEKUDMUIXMMOUVIF` |
+| Decrypt | `BMODZBXDNABEKUDMUIXMMOUVIF` | — | `HIDETHEGOLDINTHETREXESTUMP` |
+| Encrypt | `XX` | `XQXQ` | `GWGW` |
+| Encrypt | `ABX` | `ABXQ` | `PDGW` |
+| Decrypt | `GWGW` | — | `XQXQ` |
 
-| Khóa nhập | Khóa chuẩn hóa |
-|---:|---:|
-| `29` | `3` |
-| `-3` | `23` |
-| `26` | `0` |
-| `-29` | `23` |
+Playfair cố ý mất thông tin. Decrypt trả uppercase prepared plaintext và giữ mọi
+filler `X`/`Q`; server không đoán filler, không phục hồi `J`, case, whitespace,
+dấu câu hay Unicode đã bị loại. Vì vậy round-trip không nhất thiết bằng input gốc.
 
-## 3. Luồng xử lý văn bản
+## 3. API: 9 endpoint
 
-1. Người dùng chọn **Mã hóa** hoặc **Giải mã**, nhập văn bản và khóa.
-2. UI chỉ bật nút hành động khi cả văn bản và khóa hợp lệ.
-3. UI gửi JSON tới `POST /api/caesar/encrypt` hoặc
-   `POST /api/caesar/decrypt`.
-4. Server kiểm tra body, `text` và `key`, rồi gọi Caesar Core.
-5. Server trả JSON thành công:
+| Cipher | Method và path | Request | Vai trò |
+|---|---|---|---|
+| Caesar | `POST /api/caesar/encrypt` | JSON | Mã hóa text |
+| Caesar | `POST /api/caesar/decrypt` | JSON | Giải mã text |
+| Caesar | `POST /api/caesar/file` | Multipart | Mã hóa/giải mã file |
+| Vigenère | `POST /api/vigenere/encrypt` | JSON | Mã hóa text |
+| Vigenère | `POST /api/vigenere/decrypt` | JSON | Giải mã text |
+| Vigenère | `POST /api/vigenere/file` | Multipart | Mã hóa/giải mã file |
+| Playfair | `POST /api/playfair/encrypt` | JSON | Mã hóa text |
+| Playfair | `POST /api/playfair/decrypt` | JSON | Giải mã text |
+| Playfair | `POST /api/playfair/file` | Multipart | Mã hóa/giải mã file |
 
-   ```json
-   {"success": true, "result": "Khoor Zruog"}
-   ```
+### 3.1 Text JSON
 
-6. UI hiển thị đúng chuỗi `result`, cho phép xem phân tích, sao chép hoặc tải kết
-   quả thành file UTF-8.
+Hai endpoint text của mỗi cipher nhận `Content-Type: application/json`:
 
-Với JSON API, `key` phải thực sự là JSON integer. Các giá trị như `true`, `3.0`
-hoặc chuỗi `"3"` bị từ chối; khóa âm, `0` và khóa lớn hơn `25` đều hợp lệ.
+| Cipher | Body | Kiểu key |
+|---|---|---|
+| Caesar | `{"text":"Hello World","key":3}` | JSON integer |
+| Vigenère | `{"text":"Attack at dawn!","key":"LEMON"}` | String `[A-Za-z]+` |
+| Playfair | `{"text":"HIDE THE GOLD","key":"PLAYFAIR EXAMPLE"}` | String còn ít nhất một ASCII letter sau normalize |
 
-## 4. Luồng xử lý file
+`text` phải là string khác rỗng. Chuỗi chỉ có whitespace hợp lệ với Caesar và
+Vigenère; Playfair từ chối nếu normalization không còn ASCII letter.
 
-UI cho phép chọn hoặc kéo-thả file. Luồng hoàn chỉnh gồm hai chế độ phản hồi:
+Ví dụ:
 
-```text
-Chọn file .txt
-    │
-    ├─ UI kiểm tra sơ bộ: đuôi, 0 byte, giới hạn 5 MiB
-    │
-    ▼
-POST /api/caesar/file, response_mode=content
-    │
-    ├─ server kiểm tra metadata, kích thước và UTF-8
-    ├─ bỏ BOM đầu file khỏi nội dung logic
-    ├─ gọi Caesar Core
-    ▼
-JSON result để xem trước
-    │
-    └─ khi người dùng tải xuống:
-       POST lại với response_mode=file
-       → attachment UTF-8, đúng filename và trạng thái BOM
+```bash
+curl -sS -X POST http://localhost:8000/api/caesar/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Hello World","key":3}'
+
+curl -sS -X POST http://localhost:8000/api/vigenere/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Attack at dawn!","key":"LEMON"}'
+
+curl -sS -X POST http://localhost:8000/api/playfair/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"HIDE THE GOLD IN THE TREE STUMP","key":"PLAYFAIR EXAMPLE"}'
 ```
 
-Server chỉ chấp nhận tên kết thúc bằng `.txt`, không phân biệt hoa thường. File
-đúng `5 MiB = 5.242.880 byte` được chấp nhận; thêm một byte sẽ bị từ chối. File
-phải là UTF-8 thường hoặc UTF-8 có BOM.
+### 3.2 File multipart
 
-Khi trả JSON để xem trước, BOM không nằm trong `result` vì BOM là dấu hiệu
-encoding, không phải nội dung. Khi tải file, server gắn lại BOM nếu và chỉ nếu file
-gốc có BOM. Ký tự kết thúc dòng `LF` và `CRLF` cũng được bảo toàn nguyên trạng.
+Ba endpoint `/file` nhận `multipart/form-data` với các field:
 
-Tên file kết quả dùng dấu chấm:
+| Field | Bắt buộc | Giá trị |
+|---|---:|---|
+| `file` | Có | File có filename kết thúc bằng `.txt`, không phân biệt hoa thường |
+| `key` | Có | Chuỗi multipart; Caesar dùng signed integer, hai cipher còn lại dùng string key |
+| `action` | Có | Chính xác `encrypt` hoặc `decrypt` |
+| `response_mode` | Không | `content` hoặc `file`; mặc định `content` |
 
-```text
-note.txt       → note.encrypted.txt
-note.txt       → note.decrypted.txt
-bao.cao.v2.txt → bao.cao.v2.encrypted.txt
-BaoCao.TXT     → BaoCao.encrypted.txt
+`action` và `response_mode` phân biệt hoa thường. Với Caesar, key multipart được
+trim, phải khớp `[+-]?[0-9]+` và dài tối đa 32 ký tự. Vigenère không trim hay tự
+sửa key; Playfair normalize key theo quy tắc thuật toán.
+
+```bash
+curl -sS -X POST http://localhost:8000/api/vigenere/file \
+  -F 'file=@input.txt;type=text/plain' \
+  -F 'key=LEMON' \
+  -F 'action=encrypt' \
+  -F 'response_mode=content'
 ```
 
-## 5. Validation và lỗi quan trọng
+## 4. Response và lỗi
 
-Mọi lỗi API dùng cùng một cấu trúc, không trả stack trace hay chi tiết kỹ thuật:
+Text thành công và file `response_mode=content` trả HTTP `200` với đúng hai field:
 
 ```json
-{"success": false, "message": "<thông báo tiếng Việt>"}
+{"success":true,"result":"Khoor Zruog"}
 ```
 
-| HTTP status | Nhóm lỗi | Ví dụ |
-|---:|---|---|
-| `413` | Request hoặc file vượt giới hạn | `File vượt quá dung lượng tối đa 5 MB.` |
-| `415` | Sai đuôi file hoặc encoding | `Chỉ chấp nhận file .txt.` |
-| `422` | Body/field thiếu, rỗng hoặc sai định dạng | `Khóa phải là số nguyên.` |
-| `500` | Lỗi đọc file hoặc lỗi hệ thống | `Đã xảy ra lỗi hệ thống.` |
+Mọi lỗi trả JSON đúng hai field, kể cả request dùng `response_mode=file`:
 
-Các nguyên tắc cần nhớ:
+```json
+{"success":false,"message":"Khóa phải là số nguyên."}
+```
 
-- Chuỗi hoặc file chỉ chứa whitespace vẫn hợp lệ; chỉ chuỗi rỗng/null hoặc file
-  đúng `0` byte bị coi là rỗng.
-- `.TXT` được chấp nhận, nhưng `a.txt.exe` bị từ chối.
-- `action` và `response_mode` là giá trị giao thức phân biệt hoa thường.
-- Khi một request có nhiều lỗi, server trả đúng một lỗi theo thứ tự validation đã
-  chốt; ma trận đầy đủ nằm trong OpenSpec.
-- Giới hạn nghiệp vụ là **5 MiB**. Chuỗi lỗi vẫn cố ý ghi **“5 MB”** để giữ nguyên
-  contract tiếng Việt đã được chấp nhận trong scope.
-- Ngoài giới hạn file, ứng dụng có trần hạ tầng `64 MiB` theo `Content-Length` để
-  từ chối payload rõ ràng quá lớn trước khi phân tích body.
+Contract không có machine error `code`, `detail`, field errors,
+`normalizedInput`, matrix, prepared text hoặc metadata bổ sung. Client nên dùng
+HTTP status và request context cho logic, còn `message` tiếng Việt để hiển thị.
 
-## 6. Trạng thái UI và thẩm quyền của server
+File `response_mode=file` thành công là ngoại lệ không dùng JSON: server trả body
+bytes UTF-8 với `Content-Type: text/plain; charset=utf-8` và
+`Content-Disposition: attachment`.
 
-Giao diện mặc định ở chế độ **Mã hóa** với nguồn **Văn bản**. Nó quản lý mode,
-nguồn input, file đang chọn, kết quả, tab xem và trạng thái loading.
+Các nhóm status chính:
 
-- Nút hành động chỉ bật khi input và khóa cùng hợp lệ.
-- Trong lúc chờ server, toàn bộ cụm điều khiển bị khóa để tránh request trùng hoặc
-  trạng thái UI lệch với request đang chạy.
-- Khi input, khóa, mode hoặc nguồn thay đổi, kết quả cũ được xóa để tránh hiển thị
-  stale result.
-- Request thất bại cũng xóa kết quả thành công cũ và hiển thị thông báo tiếng Việt.
-- **Xóa** chỉ tác động lên panel tương ứng; **Làm mới** đưa toàn bộ trang về trạng
-  thái ban đầu.
-- Tab **Phân tích**, phần tô màu ký tự và bảng dịch chuyển chỉ giúp quan sát thuật
-  toán. Chúng không thay thế kết quả server.
+| Status | Ý nghĩa |
+|---:|---|
+| `200` | Thành công; JSON preview hoặc attachment |
+| `413` | File vượt 5 MiB hoặc request rõ ràng vượt trần hạ tầng |
+| `415` | Sai đuôi `.txt` hoặc file không phải UTF-8 |
+| `422` | Body/field/key/action/content không hợp lệ |
+| `500` | Lỗi đọc file hoặc lỗi hệ thống đã được che chi tiết kỹ thuật |
 
-Trình duyệt chỉ giữ một hàm ánh xạ 26 chữ cái để vẽ bảng dịch chuyển. Mọi kết quả
-mã hóa/giải mã được hiển thị, sao chép hoặc tải xuống đều bắt nguồn từ phản hồi API.
+Backend dừng ở lỗi đầu tiên theo validation precedence đã chốt. Ma trận message
+và thứ tự đầy đủ nằm trong OpenSpec và
+[`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md).
 
-## 7. Kiến trúc và ranh giới runtime
+## 5. Contract file
+
+- Chỉ nhận filename kết thúc bằng `.txt`, không phân biệt hoa thường; ví dụ
+  `.TXT` hợp lệ nhưng `.txt.exe` không hợp lệ.
+- File phải là UTF-8 thường hoặc UTF-8 có BOM.
+- Giới hạn chính xác là `5 MiB = 5 * 1024 * 1024 = 5.242.880 byte` nội dung file.
+  Đúng giới hạn được chấp nhận; `5.242.881` byte trả HTTP `413`. Message public
+  vẫn ghi “5 MB” để giữ contract đã chấp nhận.
+- File `0` byte bị từ chối. Whitespace-only hợp lệ với Caesar/Vigenère, nhưng
+  Playfair từ chối sau normalization.
+- `response_mode=content` trả JSON preview và loại BOM khỏi chuỗi `result`.
+- `response_mode=file` trả attachment do server tạo; attachment giữ BOM nếu và
+  chỉ nếu input có BOM.
+- Filename chỉ bỏ đuôi `.txt` cuối cùng, giữ các dấu chấm trước đó và luôn dùng
+  `.txt` thường:
 
 ```text
-Browser UI
-   │  JSON hoặc multipart, cùng origin
-   ▼
-FastAPI HTTP Adapter
-   ├── Text validation
-   ├── File validation / UTF-8 / BOM
-   └── Error handlers
-             │
-             ▼
-      Caesar Core dùng chung
-             │
-             ▼
-       JSON hoặc attachment
+note.txt       + encrypt → note.encrypted.txt
+note.txt       + decrypt → note.decrypted.txt
+bao.cao.TXT    + encrypt → bao.cao.encrypted.txt
 ```
 
-Ứng dụng cung cấp:
+Với nguồn file upload, preview và download là hai request riêng. Client phải dùng
+attachment và filename của server cho bản tải chính thức, không đóng gói lại
+preview thành file thay thế.
 
-| Method | Path | Vai trò |
-|---|---|---|
-| `GET` | `/` | Giao diện web |
-| `GET` | `/docs` | Tài liệu API tương tác |
-| `GET` | `/openapi.json` | OpenAPI schema |
-| `POST` | `/api/caesar/encrypt` | Mã hóa text JSON |
-| `POST` | `/api/caesar/decrypt` | Giải mã text JSON |
-| `POST` | `/api/caesar/file` | Mã hóa/giải mã file multipart |
+## 6. Runtime boundary
 
-UI và API cùng scheme, host và cổng, nên UI dùng đường dẫn tương đối và Week 1
-không cấu hình CORS. Local và container đều phục vụ trên cổng `8000`.
+- Cổng ứng dụng: `8000` cho cả local và container.
+- UI và API cùng origin; app không bật CORS. FE dev server riêng nên proxy `/api`
+  tới `http://localhost:8000` và giữ URL API tương đối.
+- Swagger UI: <http://localhost:8000/docs>
+- OpenAPI JSON: <http://localhost:8000/openapi.json>
+- Trang static đi kèm: <http://localhost:8000/>
+- Runtime không công bố `/health`; đừng xây readiness/liveness contract dựa trên
+  endpoint này.
+- Request guard có trần hạ tầng `64 MiB` cho một `Content-Length` decimal hợp lệ;
+  trần này không thay đổi giới hạn nghiệp vụ file 5 MiB.
 
-## 8. Cài đặt và chạy local
+## 7. Cài đặt và chạy local
 
-### Yêu cầu trước khi clone
+### Yêu cầu
 
-| Thành phần | Phiên bản đã kiểm chứng | Ghi chú |
-|---|---|---|
-| Python | **3.12.x** (`3.12.3`) | `requires-python = ">=3.12,<3.13"` |
-| uv | **0.12.15** | Cùng phiên bản pin trong `Dockerfile` |
-| Docker | **29.x** hoặc mới hơn | Chỉ bắt buộc cho luồng container |
+| Thành phần | Yêu cầu từ repository |
+|---|---|
+| Python | `>=3.12,<3.13` theo `pyproject.toml` |
+| uv | `0.12.15`, cùng bản được pin trong `Dockerfile` |
+| Docker | Tùy chọn cho luồng container; repository không pin phiên bản Docker CLI |
 
-### Cài `uv` 0.12.15
+### Cài uv 0.12.15
+
+Theo [hướng dẫn cài đặt chính thức của uv](https://docs.astral.sh/uv/getting-started/installation/),
+URL installer có thể chứa phiên bản cụ thể:
 
 ```bash
 curl -LsSf https://astral.sh/uv/0.12.15/install.sh | sh
-uv --version   # uv 0.12.15
+uv --version
 ```
 
-### Chuẩn bị môi trường
+Nếu installer yêu cầu cập nhật `PATH`, hãy làm theo hướng dẫn nó in ra hoặc mở
+terminal mới trước khi chạy lệnh kiểm tra. Kết quả phải báo `uv 0.12.15` trước khi
+đồng bộ dependency.
+
+### Chuẩn bị môi trường khóa dependency
 
 ```bash
-git clone <url-ssp-bai-tap> && cd caesar_cipher-be
-uv sync --frozen        # tạo .venv + cài dependency đúng theo uv.lock, gồm dev deps
+git clone git@github.com:kiendt2312/caesar-cipher-be.git
+cd caesar-cipher-be
+uv sync --frozen
 ```
 
-`uv sync` mặc định cài nhóm dev. Dùng `uv sync --frozen --no-dev` nếu chỉ cần
-dependency để chạy ứng dụng.
+`uv sync --frozen` dùng đúng `uv.lock` và mặc định cài nhóm dev. Nếu chỉ cần chạy
+ứng dụng, dùng `uv sync --frozen --no-dev`.
 
 ### Chạy server
 
@@ -269,22 +295,10 @@ dependency để chạy ứng dụng.
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Sau khi server khởi động:
+Sau khi server khởi động, đối chiếu runtime tại `/docs` hoặc `/openapi.json` thay
+vì duy trì một bản OpenAPI sao chép trong README.
 
-- Giao diện: <http://localhost:8000/>
-- Swagger UI: <http://localhost:8000/docs>
-- OpenAPI JSON: <http://localhost:8000/openapi.json>
-
-Ví dụ gọi API:
-
-```bash
-curl -sS -X POST http://localhost:8000/api/caesar/encrypt \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "Hello World", "key": 3}'
-# {"success":true,"result":"Khoor Zruog"}
-```
-
-## 9. Chạy test và lint
+## 8. Test, lint và format
 
 ```bash
 uv run pytest
@@ -293,77 +307,107 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-Coverage chỉ đo Python trong `app/`, không tính JS/CSS/HTML. Ngưỡng chặn trong
-`pyproject.toml` là `--cov-fail-under=90`.
+`pyproject.toml` cấu hình coverage cho `app/`, bật branch coverage và chặn dưới
+`90%`. Các phiên bản package cụ thể được khóa trong `uv.lock`; không cần nâng cấp
+dependency để chạy các lệnh trên.
 
-## 10. Chạy bằng Docker
+## 9. Docker
 
-Build image multi-stage bằng dependency trong `uv.lock`:
+`Dockerfile` dùng multi-stage build, Python `3.12-slim`, uv `0.12.15`, dependency
+runtime từ `uv.lock`, user không phải root `appuser` (uid `10001`) và cổng `8000`.
 
 ```bash
 docker build -t caesar-cipher-be .
-```
-
-Chạy container và map cổng `8000`:
-
-```bash
 docker run --rm -p 8000:8000 caesar-cipher-be
 ```
 
 Kiểm tra từ terminal khác:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/      # 200
-curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/docs  # 200
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/docs
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 ```
 
-Container chạy bằng user không phải root (`appuser`, uid `10001`) và image runtime
-không chứa `uv`:
+Container chạy trực tiếp Uvicorn; repository không cấu hình production reverse
+proxy, TLS, rate limiting, cloud deployment hoặc orchestration.
 
-```bash
-docker run --rm caesar-cipher-be id -u
-# 10001
+Không phơi trực tiếp app này ra Internet. Nếu cần public service, hãy đặt một
+reverse proxy/gateway bên ngoài repository để kết thúc TLS, giới hạn request và
+thêm rate limiting; cấu hình và triển khai lớp đó nằm ngoài phạm vi dự án này.
 
-docker run --rm caesar-cipher-be sh -c 'command -v uv || echo UV-ABSENT'
-# UV-ABSENT
+## 10. Kiến trúc và cấu trúc dự án
+
+```text
+app/
+├── main.py                         # assembly, router, middleware, UI static
+├── config.py                       # giới hạn file/request và cổng
+├── core/
+│   ├── caesar.py                   # Caesar thuần
+│   ├── vigenere.py                 # Vigenère repeating-key thuần
+│   └── playfair.py                 # Playfair 5×5 thuần
+├── api/
+│   ├── routes_text.py              # Caesar JSON
+│   ├── routes_file.py              # Caesar multipart
+│   ├── routes_additional_text.py   # Vigenère/Playfair JSON
+│   ├── routes_additional_file.py   # Vigenère/Playfair multipart
+│   ├── schemas.py                  # parse/validation và response schema
+│   └── request_size_guard.py       # 64 MiB + multipart completion guards
+├── services/
+│   └── file_processing.py          # size, UTF-8/BOM và filename helpers
+├── errors/
+│   ├── messages.py                 # message public canonical
+│   ├── exceptions.py               # lỗi ứng dụng có status
+│   └── handlers.py                 # JSON envelope và log an toàn
+├── templates/                      # UI static Caesar-only
+└── static/
+
+tests/
+├── unit/                            # core, validation, file helpers, layering
+└── integration/                     # HTTP/OpenAPI, guards, UI assets
 ```
 
-Hành vi quan sát được — kết quả, HTTP status, response envelope và thông báo lỗi —
-giống nhau giữa local và container.
+Các core là module thuần, không phụ thuộc FastAPI/file transport. HTTP adapters
+chịu trách nhiệm validation và gọi đúng core; helper file dùng chung kiểm soát
+bytes, encoding, BOM và attachment; error handlers dùng một envelope thống nhất.
 
-## 11. Phạm vi Week 1
+## 11. Phạm vi và ngoài phạm vi
 
-Week 1 cố ý không gồm:
+Repository này là backend cipher service cho Caesar, Vigenère và Playfair. Nó có
+UI static Caesar-only phục vụ cùng app, nhưng không chứa codebase của Frontend ba
+thuật toán hiện hành.
 
-- database, persistence, session hoặc lịch sử thao tác;
-- authentication và authorization;
-- thuật toán cipher thứ hai hoặc abstract cipher hierarchy;
-- React hay project frontend tách riêng;
+Ngoài phạm vi hiện tại:
+
+- authentication, authorization, database, persistence, session và history;
+- cipher khác, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- phục hồi format, `J` hoặc filler gốc khi decrypt Playfair;
 - CORS cho frontend khác origin;
-- CI/CD và triển khai cloud;
-- xử lý streaming cho file lớn hơn giới hạn;
-- rate limiting.
+- production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
+- streaming file lớn hơn giới hạn nghiệp vụ.
 
-Ứng dụng không nên được phơi trực tiếp ra Internet. Nếu cần triển khai công khai,
-hãy đặt reverse proxy phía trước để giới hạn request và bổ sung rate limit phù hợp.
-Dừng container bằng `Ctrl+C`; với `--rm`, container tự xóa. Không có database hay
-file trạng thái nào cần dọn sau đó.
+Dockerfile chỉ đóng gói app hiện có; nó không phải cấu hình production deployment
+hoàn chỉnh.
 
 ## 12. Nguồn đặc tả và thứ tự áp dụng
 
-Các nguồn dùng để hiểu và kiểm chứng hành vi:
+README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
+thứ tự sau:
 
-1. [`BE Scope – Week 1 Caesar Cipher MVP.docx`](<BE Scope – Week 1 Caesar Cipher MVP.docx>)
-   và [bản Markdown bảo tồn](docs/reference/be-scope-v1.0.md) mô tả phạm vi và
-   contract nghiệp vụ đã thống nhất.
-2. [OpenSpec change đã hoàn thành](openspec/changes/caesar-cipher-week1-mvp/)
-   ghi lại hành vi quan sát được, quyết định đã chấp nhận và các bổ sung kỹ thuật.
-3. `app/` là hiện thực của accepted Week 1 behavior tại HEAD hiện tại.
-4. [`Caesar_Cipher_Tool_Demo.html`](Caesar_Cipher_Tool_Demo.html) là **UI reference
-   cũ**, không phải runtime contract hiện hành.
+1. [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/add-playfair-vigenere-ciphers/)
+   cho hành vi hai cipher mới, cùng
+   [OpenSpec Caesar Week 1 đã hoàn thành](openspec/changes/caesar-cipher-week1-mvp/)
+   cho Caesar và contract dùng chung.
+2. Runtime trong `app/`, các test contract và `/openapi.json` xác nhận cách đặc tả
+   được hiện thực ở revision đang chạy.
+3. [Frontend integration guide](repo_docs/frontend-integration.md) diễn giải
+   consumer contract chi tiết và phải được đồng bộ nếu lệch hai nguồn trên.
+4. [Bản scope Caesar bảo tồn](docs/reference/be-scope-v1.0.md) và các source DOCX
+   dùng để truy vết yêu cầu gốc.
+5. `Caesar_Cipher_Tool_Demo.html` chỉ là UI reference cũ; mock, giới hạn 1 MB,
+   filename dấu gạch dưới, host/cổng hard-code hoặc local cipher trong demo không
+   ghi đè accepted behavior.
 
-Demo cũ vẫn chứa backend giả lập, giới hạn `1 MB`, host/cổng ghi cứng và một số
-nhãn/hành vi đã được thay thế. Khi demo mâu thuẫn với scope, accepted OpenSpec hoặc
-hành vi hiện tại, **accepted OpenSpec và current behavior chi phối cách hiểu Week 1**.
-Ma trận validation đầy đủ, thứ tự mọi lỗi cạnh tranh, lịch sử quyết định, benchmark
-và các phương án thiết kế đã loại được giữ trong OpenSpec thay vì sao chép vào README.
+README cố ý không sao chép toàn bộ OpenAPI, bảng message hay validation matrix.
+Khi contract thay đổi, cập nhật OpenSpec/runtime trước rồi đồng bộ các tài liệu
+consumer tương ứng.

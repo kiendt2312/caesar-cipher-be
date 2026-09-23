@@ -7,7 +7,9 @@ import re
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.datastructures import FormData, UploadFile
 
+from app.core.affine import normalize_keys as normalize_affine_keys
 from app.core.playfair import normalize_keyword as normalize_playfair_keyword
 from app.core.playfair import normalize_text as normalize_playfair_text
 from app.errors.exceptions import (
@@ -15,13 +17,19 @@ from app.errors.exceptions import (
     EmptyPlayfairTextError,
     EmptyTextError,
     InvalidActionError,
+    InvalidAffineMultiplierError,
+    InvalidAffineShiftError,
     InvalidKeyError,
     InvalidPlayfairKeyError,
     InvalidRequestBodyError,
     InvalidResponseModeError,
     InvalidStringKeyError,
     InvalidVigenereKeyError,
+    MissingAffineMultiplierError,
+    MissingAffineShiftError,
+    MissingFileError,
     MissingKeyError,
+    NonInvertibleAffineMultiplierError,
     OddPlayfairCiphertextError,
 )
 
@@ -63,6 +71,22 @@ class StringKeyCipherRequest(BaseModel):
 
     text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
     key: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
+
+
+class AffineTextCipherRequest(BaseModel):
+    """Strict raw JSON fields for deterministic Affine validation."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "required": ["text", "a", "b"],
+            "additionalProperties": False,
+        },
+    )
+
+    text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
+    a: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
+    b: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
 
 
 class TextCipherResponse(BaseModel):
@@ -141,6 +165,161 @@ def decode_string_key_request(raw: bytes, content_type: str | None) -> StringKey
         raise
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
         raise InvalidRequestBodyError() from exc
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    decoded: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in decoded:
+            raise InvalidRequestBodyError()
+        decoded[key] = value
+    return decoded
+
+
+def decode_affine_text_request(raw: bytes, content_type: str | None) -> AffineTextCipherRequest:
+    """Decode one exact Affine JSON object while retaining unbounded integer tokens."""
+
+    media_type = content_type.partition(";")[0].strip().lower() if content_type else ""
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise InvalidRequestBodyError()
+
+    try:
+        decoded = json.loads(
+            raw,
+            parse_int=JsonIntegerToken,
+            parse_constant=_reject_nonstandard_json_constant,
+            object_pairs_hook=_strict_json_object,
+        )
+        if type(decoded) is not dict:
+            raise InvalidRequestBodyError()
+        return AffineTextCipherRequest.model_validate(decoded)
+    except InvalidRequestBodyError:
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
+        raise InvalidRequestBodyError() from exc
+
+
+def _json_integer_residue(
+    value: Any,
+    missing_error: type[Exception],
+    invalid_error: type[Exception],
+) -> int:
+    if value is MISSING or value is None:
+        raise missing_error()
+    if type(value) is JsonIntegerToken:
+        negative = value.startswith("-")
+        digits = value[1:] if negative else value
+        residue = 0
+        for digit in digits:
+            residue = (residue * 10 + ord(digit) - ord("0")) % 26
+        return (-residue if negative else residue) % 26
+    if type(value) is not int:
+        raise invalid_error()
+    return value % 26
+
+
+def _normalize_affine_multiplier(multiplier: int) -> int:
+    """Normalize an Affine multiplier and map invertibility to the API error."""
+
+    try:
+        normalized_multiplier, _ = normalize_affine_keys(multiplier, 0)
+    except ValueError as exc:
+        raise NonInvertibleAffineMultiplierError() from exc
+    return normalized_multiplier
+
+
+def validate_affine_text_request(payload: AffineTextCipherRequest) -> tuple[str, int, int]:
+    """Apply Affine text validation in the contract-defined text → a → b order."""
+
+    if payload.text is MISSING or type(payload.text) is not str or payload.text == "":
+        raise EmptyTextError()
+
+    multiplier = _json_integer_residue(
+        payload.a,
+        MissingAffineMultiplierError,
+        InvalidAffineMultiplierError,
+    )
+    normalized_multiplier = _normalize_affine_multiplier(multiplier)
+
+    shift = _json_integer_residue(
+        payload.b,
+        MissingAffineShiftError,
+        InvalidAffineShiftError,
+    )
+    return payload.text, normalized_multiplier, shift
+
+
+def _parse_affine_form_integer(
+    value: Any,
+    missing_error: type[Exception],
+    invalid_error: type[Exception],
+) -> int:
+    if value is MISSING or value is None:
+        raise missing_error()
+    if type(value) is not str:
+        raise invalid_error()
+
+    stripped = value.strip()
+    if stripped == "":
+        raise missing_error()
+    if len(stripped) > MULTIPART_KEY_MAX_LENGTH:
+        raise invalid_error()
+    if _MULTIPART_KEY_PATTERN.fullmatch(stripped) is None:
+        raise invalid_error()
+    return int(stripped) % 26
+
+
+def validate_affine_file_form(
+    form: FormData,
+) -> tuple[
+    UploadFile,
+    int,
+    int,
+    Literal["encrypt", "decrypt"],
+    Literal["content", "file"],
+]:
+    """Validate an exact Affine multipart form in deterministic field order."""
+
+    allowed = {"file", "a", "b", "action", "response_mode"}
+    items = list(form.multi_items())
+    names = [name for name, _ in items]
+    if any(name not in allowed for name in names) or len(names) != len(set(names)):
+        raise InvalidRequestBodyError()
+
+    file = form.get("file", MISSING)
+    if file is MISSING or file is None:
+        raise MissingFileError()
+    if not isinstance(file, UploadFile):
+        raise InvalidRequestBodyError()
+
+    multiplier = _parse_affine_form_integer(
+        form.get("a", MISSING),
+        MissingAffineMultiplierError,
+        InvalidAffineMultiplierError,
+    )
+    normalized_multiplier = _normalize_affine_multiplier(multiplier)
+
+    shift = _parse_affine_form_integer(
+        form.get("b", MISSING),
+        MissingAffineShiftError,
+        InvalidAffineShiftError,
+    )
+
+    action = form.get("action", MISSING)
+    if action not in ("encrypt", "decrypt"):
+        raise InvalidActionError()
+
+    response_mode = form.get("response_mode", MISSING)
+    if response_mode is MISSING or response_mode is None:
+        parsed_response_mode = "content"
+    elif response_mode not in ("content", "file"):
+        raise InvalidResponseModeError()
+    else:
+        parsed_response_mode = response_mode
+
+    return file, normalized_multiplier, shift, action, parsed_response_mode
 
 
 def parse_multipart_key(value: Any) -> int:

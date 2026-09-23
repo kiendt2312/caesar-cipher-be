@@ -7,6 +7,11 @@ application's exception classes and HTTP adapters.
 TEXT_EMPTY = "Văn bản không được để trống."
 MISSING_KEY = "Thiếu khóa."
 INVALID_KEY = "Khóa phải là số nguyên."
+MISSING_AFFINE_MULTIPLIER = "Thiếu khóa a."
+INVALID_AFFINE_MULTIPLIER = "Khóa a phải là số nguyên."
+NON_INVERTIBLE_AFFINE_MULTIPLIER = "Khóa a phải nguyên tố cùng nhau với 26."
+MISSING_AFFINE_SHIFT = "Thiếu khóa b."
+INVALID_AFFINE_SHIFT = "Khóa b phải là số nguyên."
 INVALID_STRING_KEY = "Khóa phải là chuỗi."
 INVALID_VIGENERE_KEY = "Khóa Vigenère chỉ được chứa chữ cái A-Z hoặc a-z."
 INVALID_PLAYFAIR_KEY = "Khóa Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z."
@@ -37,6 +42,11 @@ CANONICAL_MESSAGES = (
     TEXT_EMPTY,
     MISSING_KEY,
     INVALID_KEY,
+    MISSING_AFFINE_MULTIPLIER,
+    INVALID_AFFINE_MULTIPLIER,
+    NON_INVERTIBLE_AFFINE_MULTIPLIER,
+    MISSING_AFFINE_SHIFT,
+    INVALID_AFFINE_SHIFT,
     INVALID_STRING_KEY,
     INVALID_VIGENERE_KEY,
     INVALID_PLAYFAIR_KEY,

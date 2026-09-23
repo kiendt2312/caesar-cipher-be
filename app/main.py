@@ -9,6 +9,8 @@ from app import config
 from app.api.request_size_guard import MultipartCompletionGuard, RequestSizeGuard
 from app.api.routes_additional_file import playfair_file_router, vigenere_file_router
 from app.api.routes_additional_text import playfair_router, vigenere_router
+from app.api.routes_affine_file import router as affine_file_router
+from app.api.routes_affine_text import router as affine_text_router
 from app.api.routes_file import router as file_router
 from app.api.routes_text import router as text_router
 from app.errors import messages
@@ -22,6 +24,8 @@ app.include_router(text_router)
 app.include_router(file_router)
 app.include_router(vigenere_router)
 app.include_router(playfair_router)
+app.include_router(affine_text_router)
+app.include_router(affine_file_router)
 app.include_router(vigenere_file_router)
 app.include_router(playfair_file_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

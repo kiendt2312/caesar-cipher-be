@@ -1,7 +1,7 @@
-# Backend Caesar, Vigenère và Playfair
+# Backend Caesar, Vigenère, Playfair và Affine
 
-Backend FastAPI cung cấp API mã hóa/giải mã cho ba thuật toán cổ điển:
-**Caesar**, **Vigenère** và **Playfair**. API nhận văn bản JSON hoặc file `.txt`,
+Backend FastAPI cung cấp API mã hóa/giải mã cho bốn thuật toán cổ điển:
+**Caesar**, **Vigenère**, **Playfair** và **Affine**. API nhận văn bản JSON hoặc file `.txt`,
 trả kết quả xem trước dạng JSON hoặc file đính kèm do server tạo.
 
 Đây là dự án học tập, không phải công cụ bảo vệ dữ liệu nhạy cảm. Server là nguồn
@@ -11,7 +11,7 @@ chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để h
 
 Đội Frontend nên bắt đầu từ
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
-consumer contract chi tiết cho cả 9 endpoint.
+consumer contract chi tiết cho cả 12 endpoint.
 
 ## 1. Tổng quan hành vi
 
@@ -26,16 +26,16 @@ JSON text hoặc multipart .txt
  request guards + validation xác định
               │
               ▼
-   Caesar | Vigenère | Playfair core
+ Caesar | Vigenère | Playfair | Affine core
               │
               ▼
  JSON hai trường hoặc attachment UTF-8
 ```
 
 UI static đi kèm tại `/` là UI Caesar-only từ phạm vi Week 1. Nó không đại diện
-cho toàn bộ khả năng API; Frontend ba thuật toán hiện hành là consumer tách biệt.
+cho toàn bộ khả năng API; Frontend bốn thuật toán hiện hành là consumer tách biệt.
 
-## 2. Ba thuật toán
+## 2. Bốn thuật toán
 
 ### 2.1 Caesar
 
@@ -113,7 +113,28 @@ Playfair cố ý mất thông tin. Decrypt trả uppercase prepared plaintext v�
 filler `X`/`Q`; server không đoán filler, không phục hồi `J`, case, whitespace,
 dấu câu hay Unicode đã bị loại. Vì vậy round-trip không nhất thiết bằng input gốc.
 
-## 3. API: 9 endpoint
+### 2.4 Affine modulo 26
+
+Affine dùng hai khóa integer `a`, `b`, được chuẩn hóa về `a'`, `b'` theo modulo 26.
+`a'` phải nguyên tố cùng nhau với 26; tập hợp lệ chính xác là
+`1,3,5,7,9,11,15,17,19,21,23,25`, còn `b'` nhận mọi residue `0..25`. Vì vậy có
+đúng `12 × 26 = 312` cặp khóa normalized hợp lệ. `(5,8)` chỉ là cặp gợi ý/canonical,
+không phải default server.
+
+```text
+Encrypt: E(x) = (a' × x + b') mod 26
+Decrypt: D(y) = inverse(a', 26) × (y - b') mod 26
+
+HELLO + (5,8) → RCLLA
+RCLLA + (5,8) → HELLO
+```
+
+Chỉ ASCII `A-Z`/`a-z` bị biến đổi và vẫn giữ case. Mọi ký tự khác, gồm Unicode,
+emoji, whitespace và CRLF, được giữ nguyên. Với khóa hợp lệ, round-trip Affine là
+lossless. Khóa âm/lớn được normalize; ví dụ `(-21,-18)` và `(57,60)` tương đương
+`(5,8)`. Server từ chối `a'` không khả nghịch thay vì tự sửa sang khóa khác.
+
+## 3. API: 12 endpoint
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -126,6 +147,9 @@ dấu câu hay Unicode đã bị loại. Vì vậy round-trip không nhất thi�
 | Playfair | `POST /api/playfair/encrypt` | JSON | Mã hóa text |
 | Playfair | `POST /api/playfair/decrypt` | JSON | Giải mã text |
 | Playfair | `POST /api/playfair/file` | Multipart | Mã hóa/giải mã file |
+| Affine | `POST /api/affine/encrypt` | JSON | Mã hóa text |
+| Affine | `POST /api/affine/decrypt` | JSON | Giải mã text |
+| Affine | `POST /api/affine/file` | Multipart | Mã hóa/giải mã file |
 
 ### 3.1 Text JSON
 
@@ -136,9 +160,14 @@ Hai endpoint text của mỗi cipher nhận `Content-Type: application/json`:
 | Caesar | `{"text":"Hello World","key":3}` | JSON integer |
 | Vigenère | `{"text":"Attack at dawn!","key":"LEMON"}` | String `[A-Za-z]+` |
 | Playfair | `{"text":"HIDE THE GOLD","key":"PLAYFAIR EXAMPLE"}` | String còn ít nhất một ASCII letter sau normalize |
+| Affine | `{"text":"HELLO","a":5,"b":8}` | Hai JSON integer thật; không có default |
 
 `text` phải là string khác rỗng. Chuỗi chỉ có whitespace hợp lệ với Caesar và
 Vigenère; Playfair từ chối nếu normalization không còn ASCII letter.
+Affine cũng chấp nhận whitespace-only. Riêng hai route Affine yêu cầu object có
+chính xác `text`, `a`, `b`: field lạ hoặc trùng bị từ chối. `a`/`b` phải là JSON
+integer token thật, không coercion string/float/bool/null và không bị giới hạn bởi
+JavaScript safe integer; client phải serialize mà không làm tròn.
 
 Ví dụ:
 
@@ -154,11 +183,15 @@ curl -sS -X POST http://localhost:8000/api/vigenere/encrypt \
 curl -sS -X POST http://localhost:8000/api/playfair/encrypt \
   -H 'Content-Type: application/json' \
   -d '{"text":"HIDE THE GOLD IN THE TREE STUMP","key":"PLAYFAIR EXAMPLE"}'
+
+curl -sS -X POST http://localhost:8000/api/affine/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"HELLO","a":5,"b":8}'
 ```
 
 ### 3.2 File multipart
 
-Ba endpoint `/file` nhận `multipart/form-data` với các field:
+Ba endpoint Caesar/Vigenère/Playfair `/file` nhận `multipart/form-data` với các field:
 
 | Field | Bắt buộc | Giá trị |
 |---|---:|---|
@@ -171,12 +204,29 @@ Ba endpoint `/file` nhận `multipart/form-data` với các field:
 trim, phải khớp `[+-]?[0-9]+` và dài tối đa 32 ký tự. Vigenère không trim hay tự
 sửa key; Playfair normalize key theo quy tắc thuật toán.
 
+`POST /api/affine/file` có exact field set riêng:
+
+| Field | Bắt buộc | Giá trị |
+|---|---:|---|
+| `file` | Có | File `.txt` UTF-8 theo contract chung |
+| `a` | Có | Signed-decimal string, trim ngoài, tối đa 32 ký tự, không có default |
+| `b` | Có | Signed-decimal string, trim ngoài, tối đa 32 ký tự, không có default |
+| `action` | Có | Chính xác `encrypt` hoặc `decrypt` |
+| `response_mode` | Không | `content` hoặc `file`; mặc định `content` |
+
+Field lạ hoặc trùng bị từ chối trước validation field/content. `a` và `b` phải khớp
+`[+-]?[0-9]+` sau trim; `a'` còn phải nguyên tố cùng nhau với 26.
+
 ```bash
 curl -sS -X POST http://localhost:8000/api/vigenere/file \
   -F 'file=@input.txt;type=text/plain' \
   -F 'key=LEMON' \
   -F 'action=encrypt' \
   -F 'response_mode=content'
+
+curl -sS -X POST http://localhost:8000/api/affine/file \
+  -F 'file=@input.txt;type=text/plain' \
+  -F 'a=5' -F 'b=8' -F 'action=encrypt' -F 'response_mode=content'
 ```
 
 ## 4. Response và lỗi
@@ -215,6 +265,13 @@ Backend dừng ở lỗi đầu tiên theo validation precedence đã chốt. Ma
 và thứ tự đầy đủ nằm trong OpenSpec và
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md).
 
+Riêng Affine, text dùng thứ tự `body → text → a → b`; file dùng
+`multipart framing/exact fields → file → a → b → action → response_mode →
+extension → size → empty → UTF-8 → transform`. Các message khóa mới là
+`Thiếu khóa a.`, `Khóa a phải là số nguyên.`,
+`Khóa a phải nguyên tố cùng nhau với 26.`, `Thiếu khóa b.` và
+`Khóa b phải là số nguyên.`. Mỗi response lỗi vẫn chỉ chứa `success,message`.
+
 ## 5. Contract file
 
 - Chỉ nhận filename kết thúc bằng `.txt`, không phân biệt hoa thường; ví dụ
@@ -223,8 +280,8 @@ và thứ tự đầy đủ nằm trong OpenSpec và
 - Giới hạn chính xác là `5 MiB = 5 * 1024 * 1024 = 5.242.880 byte` nội dung file.
   Đúng giới hạn được chấp nhận; `5.242.881` byte trả HTTP `413`. Message public
   vẫn ghi “5 MB” để giữ contract đã chấp nhận.
-- File `0` byte bị từ chối. Whitespace-only hợp lệ với Caesar/Vigenère, nhưng
-  Playfair từ chối sau normalization.
+- File `0` byte bị từ chối. Whitespace-only hợp lệ với Caesar/Vigenère/Affine,
+  nhưng Playfair từ chối sau normalization.
 - `response_mode=content` trả JSON preview và loại BOM khỏi chuỗi `result`.
 - `response_mode=file` trả attachment do server tạo; attachment giữ BOM nếu và
   chỉ nếu input có BOM.
@@ -252,7 +309,9 @@ preview thành file thay thế.
 - Runtime không công bố `/health`; đừng xây readiness/liveness contract dựa trên
   endpoint này.
 - Request guard có trần hạ tầng `64 MiB` cho một `Content-Length` decimal hợp lệ;
-  trần này không thay đổi giới hạn nghiệp vụ file 5 MiB.
+  trần này không thay đổi giới hạn nghiệp vụ file 5 MiB. Cả bốn route file được
+  phân loại bằng file-size message và multipart-completion guard; các route text
+  Affine dùng message request generic giống các route text khác.
 
 ## 7. Cài đặt và chạy local
 
@@ -345,12 +404,15 @@ app/
 ├── core/
 │   ├── caesar.py                   # Caesar thuần
 │   ├── vigenere.py                 # Vigenère repeating-key thuần
-│   └── playfair.py                 # Playfair 5×5 thuần
+│   ├── playfair.py                 # Playfair 5×5 thuần
+│   └── affine.py                   # Affine modulo 26 thuần
 ├── api/
 │   ├── routes_text.py              # Caesar JSON
 │   ├── routes_file.py              # Caesar multipart
 │   ├── routes_additional_text.py   # Vigenère/Playfair JSON
 │   ├── routes_additional_file.py   # Vigenère/Playfair multipart
+│   ├── routes_affine_text.py       # Affine JSON strict
+│   ├── routes_affine_file.py       # Affine multipart strict
 │   ├── schemas.py                  # parse/validation và response schema
 │   └── request_size_guard.py       # 64 MiB + multipart completion guards
 ├── services/
@@ -373,14 +435,14 @@ bytes, encoding, BOM và attachment; error handlers dùng một envelope thống
 
 ## 11. Phạm vi và ngoài phạm vi
 
-Repository này là backend cipher service cho Caesar, Vigenère và Playfair. Nó có
-UI static Caesar-only phục vụ cùng app, nhưng không chứa codebase của Frontend ba
-thuật toán hiện hành.
+Repository này là backend cipher service cho Caesar, Vigenère, Playfair và Affine.
+Nó có UI static Caesar-only phục vụ cùng app, nhưng không chứa codebase của
+Frontend bốn thuật toán hiện hành.
 
 Ngoài phạm vi hiện tại:
 
 - authentication, authorization, database, persistence, session và history;
-- cipher khác, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- cipher khác ngoài bốn cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - phục hồi format, `J` hoặc filler gốc khi decrypt Playfair;
 - CORS cho frontend khác origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
@@ -394,8 +456,9 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/add-playfair-vigenere-ciphers/)
-   cho hành vi hai cipher mới, cùng
+1. [OpenSpec Affine đang được apply](openspec/changes/add-affine-cipher/) cho Affine,
+   [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/add-playfair-vigenere-ciphers/)
+   cho hai cipher đó, cùng
    [OpenSpec Caesar Week 1 đã hoàn thành](openspec/changes/caesar-cipher-week1-mvp/)
    cho Caesar và contract dùng chung.
 2. Runtime trong `app/`, các test contract và `/openapi.json` xác nhận cách đặc tả
@@ -404,7 +467,8 @@ thứ tự sau:
    consumer contract chi tiết và phải được đồng bộ nếu lệch hai nguồn trên.
 4. [Bản scope Caesar bảo tồn](docs/reference/be-scope-v1.0.md) và các source DOCX
    dùng để truy vết yêu cầu gốc.
-5. `Caesar_Cipher_Tool_Demo.html` chỉ là UI reference cũ; mock, giới hạn 1 MB,
+5. `Caesar_Cipher_Tool_Demo.html` và `affine-cipher.html` chỉ là UI/algorithm
+   reference; mock, client-side result/default, giới hạn 1 MB,
    filename dấu gạch dưới, host/cổng hard-code hoặc local cipher trong demo không
    ghi đè accepted behavior.
 

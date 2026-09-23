@@ -1,17 +1,19 @@
-# Handoff tích hợp Frontend — Caesar, Vigenère và Playfair
+# Handoff tích hợp Frontend — Caesar, Vigenère, Playfair và Affine
 
 Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích hợp với backend
-Caesar, Vigenère và Playfair. Nội dung độc lập framework: FE có thể dùng React,
+Caesar, Vigenère, Playfair và Affine. Nội dung độc lập framework: FE có thể dùng React,
 Vue, Svelte hoặc JavaScript thuần, nhưng hành vi API và trạng thái quan sát được
 phải giữ đúng contract dưới đây.
 
-- Backend áp dụng: commit `1792a29a8925dc7122ebbe62fe55caef14a00a18`.
-- Ngày cập nhật guide: `2026-09-18`.
-- Backend hiện có 9 endpoint cipher; UI static đang đi kèm backend vẫn là UI
-  Caesar-only. Việc FE bổ sung control cho Vigenère/Playfair không thay đổi backend.
-- [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
+- Backend áp dụng: working tree hiện tại đã implement xong change
+  `add-affine-cipher` nhưng chưa commit; guide không pin một SHA cũ cho phần code này.
+- Ngày cập nhật guide: `2026-09-23`.
+- Backend hiện có 12 endpoint cipher; UI static đang đi kèm backend vẫn là UI
+  Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
+- [OpenSpec Affine đang active](../openspec/changes/add-affine-cipher/),
+  [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
   [OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/) và runtime/OpenAPI
-  tại commit trên là nguồn có thẩm quyền. Guide này chỉ phản chiếu contract đó.
+  của working tree này là nguồn có thẩm quyền. Guide chỉ phản chiếu contract đó.
 
 ## 1. Nguyên tắc tích hợp
 
@@ -21,7 +23,7 @@ FE bắt buộc giữ nguyên:
 - response JSON đúng hai trường, status và thứ tự validation;
 - kết quả do server tính; FE không tự tính result dùng trong production;
 - file preview/download hai request, giới hạn 5 MiB, UTF-8, BOM và filename;
-- xóa stale result khi cipher/mode/source/input/key thay đổi hoặc request lỗi;
+- xóa stale result khi cipher/mode/source/input/key/a/b thay đổi hoặc request lỗi;
 - same-origin và URL `/api/...` tương đối.
 
 FE được tự do chọn framework, component/state store, layout, CSS và cách tổ chức
@@ -42,7 +44,8 @@ FastAPI :8000
   └── pure core theo từng thuật toán
         ├── Caesar
         ├── Vigenère
-        └── Playfair
+        ├── Playfair
+        └── Affine
   │
   └── JSON preview/error hoặc text/plain attachment
 ```
@@ -56,7 +59,8 @@ Khi chạy FE dev server riêng, cấu hình dev proxy theo contract tương đ�
 /api/*  ──proxy──>  http://localhost:8000/api/*
 ```
 
-Không yêu cầu backend bật CORS cho workflow này. Không khôi phục `API_BASE` trỏ
+Backend không hứa hẹn CORS cho origin tách riêng. FE dev server khác origin phải
+proxy `/api` về `http://localhost:8000`; không khôi phục `API_BASE` trỏ
 `localhost:8080`, mock toggle hoặc local cipher service từ demo cũ.
 
 Machine-readable surfaces của backend đang chạy:
@@ -64,19 +68,35 @@ Machine-readable surfaces của backend đang chạy:
 - Swagger UI: <http://localhost:8000/docs>
 - OpenAPI JSON: <http://localhost:8000/openapi.json>
 
+OpenAPI hiện hữu có ba giới hạn biểu diễn mà FE codegen phải overlay thay vì biến
+thành validation chặt hơn runtime:
+
+- text request chỉ advertise `application/json`, trong khi decoder runtime còn nhận
+  `application/*+json`;
+- pattern OpenAPI của multipart Affine không biểu diễn bước trim whitespace ngoài
+  trước grammar/giới hạn 32 ký tự;
+- Caesar text và một số legacy schema không liệt kê đầy đủ error response hoặc
+  `additionalProperties: false`, dù runtime/spec vẫn giữ exact response envelope.
+
+Các giới hạn trên không tạo contract mới và không thu hẹp behavior runtime đã test.
+
+Runtime hiện tại không công bố `/health`; FE, probe và deployment không được giả
+định endpoint này tồn tại. Việc bổ sung health check là một thay đổi contract riêng.
+
 Không copy OpenAPI thành một YAML tĩnh khác trong FE vì bản sao sẽ dễ trôi lệch.
 Backend stateless: không lưu input, key, file, result, session hoặc history sau request.
 
-## 3. Danh mục 9 endpoint
+## 3. Danh mục 12 endpoint
 
 | Cipher | Text encrypt | Text decrypt | File |
 |---|---|---|---|
 | Caesar | `POST /api/caesar/encrypt` | `POST /api/caesar/decrypt` | `POST /api/caesar/file` |
 | Vigenère | `POST /api/vigenere/encrypt` | `POST /api/vigenere/decrypt` | `POST /api/vigenere/file` |
 | Playfair | `POST /api/playfair/encrypt` | `POST /api/playfair/decrypt` | `POST /api/playfair/file` |
+| Affine | `POST /api/affine/encrypt` | `POST /api/affine/decrypt` | `POST /api/affine/file` |
 
-Text endpoints nhận `application/json`. File endpoints nhận
-`multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
+Text endpoints nhận `application/json` hoặc `application/*+json`. File endpoints
+nhận `multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
 
 ## 4. Thuật toán FE cần hiểu
 
@@ -159,14 +179,34 @@ hoặc Unicode đã bị loại. FE **không được heuristic-strip filler** v
 cố dựng lại formatting nguyên bản**. UI phải cảnh báo rõ rằng round-trip Playfair
 chỉ trả prepared plaintext, không phải input ban đầu.
 
+### 4.4 Affine modulo 26
+
+Affine nhận hai integer `a`, `b`, normalize thành `a'`, `b'` modulo 26 và yêu cầu
+`gcd(a',26)=1`. Các residue `a'` hợp lệ là
+`1,3,5,7,9,11,15,17,19,21,23,25`; `b'` nhận `0..25`, nên có đúng 312 cặp
+normalized. `(5,8)` chỉ là gợi ý/canonical vector, không phải default server.
+
+```text
+a' = ((a mod 26) + 26) mod 26
+b' = ((b mod 26) + 26) mod 26
+Encrypt: E(x) = (a' × x + b') mod 26
+Decrypt: D(y) = inverse(a', 26) × (y - b') mod 26
+HELLO → RCLLA → HELLO với (5,8)
+```
+
+Chỉ ASCII letter thay đổi và giữ case; Unicode, emoji, whitespace và CRLF giữ
+nguyên. Affine round-trip là lossless với khóa hợp lệ. FE không được tự sửa `a`
+không khả nghịch hoặc dùng phép tính client làm result chính thức.
+
 ## 5. TypeScript contract dùng trực tiếp
 
-Các type dưới đây mô tả consumer model. Caesar text dùng integer token; Vigenère
-và Playfair dùng string key. Multipart luôn truyền field `key` dưới dạng chuỗi.
+Các type dưới đây mô tả consumer model. Caesar text dùng một integer token,
+Affine dùng hai integer token; Vigenère và Playfair dùng string key. Multipart
+truyền mọi scalar dưới dạng string nhưng Affine dùng field `a`/`b`, không dùng `key`.
 
 ```ts
-export type Cipher = "caesar" | "vigenere" | "playfair";
-export type StringKeyCipher = Exclude<Cipher, "caesar">;
+export type Cipher = "caesar" | "vigenere" | "playfair" | "affine";
+export type StringKeyCipher = "vigenere" | "playfair";
 export type Operation = "encrypt" | "decrypt";
 export type ResponseMode = "content" | "file";
 
@@ -180,7 +220,7 @@ export interface ErrorResponse {
   message: string;
 }
 
-/** OpenAPI/wire shape khi key nằm trong Number safe range. */
+/** Chỉ dùng với giá trị đã kiểm tra Number.isSafeInteger(). */
 export interface CaesarTextRequest {
   text: string;
   key: number;
@@ -189,6 +229,13 @@ export interface CaesarTextRequest {
 export interface StringKeyTextRequest {
   text: string;
   key: string;
+}
+
+/** Chỉ dùng khi cả a và b đã kiểm tra Number.isSafeInteger(). */
+export interface AffineTextRequest {
+  text: string;
+  a: number;
+  b: number;
 }
 
 export interface CaesarTextInput {
@@ -204,15 +251,32 @@ export interface StringKeyTextInput {
   key: string;
 }
 
-export type TextInput = CaesarTextInput | StringKeyTextInput;
+export interface AffineTextInput {
+  cipher: "affine";
+  text: string;
+  /** Raw UI state; serializer phát JSON integer token, không phát JSON string. */
+  a: string;
+  b: string;
+}
 
-export interface FileInput {
-  cipher: Cipher;
+export type TextInput = CaesarTextInput | StringKeyTextInput | AffineTextInput;
+
+export interface LegacyFileInput {
+  cipher: Exclude<Cipher, "affine">;
   file: File;
-  /** FormData luôn truyền string; backend áp policy theo cipher. */
   key: string;
   action: Operation;
 }
+
+export interface AffineFileInput {
+  cipher: "affine";
+  file: File;
+  a: string;
+  b: string;
+  action: Operation;
+}
+
+export type FileInput = LegacyFileInput | AffineFileInput;
 
 export interface AttachmentResult {
   blob: Blob;
@@ -220,12 +284,18 @@ export interface AttachmentResult {
 }
 ```
 
-Lưu ý: wire request Caesar text bắt buộc là JSON integer, không phải string.
-`CaesarTextInput.key` là chuỗi UI để tránh mất chính xác trong JavaScript; helper
-ở phần sau phát token số không có dấu nháy. Không gọi `JSON.stringify()` trực tiếp
-trên `bigint`. `CaesarTextRequest` mô tả shape OpenAPI cho integer nằm trong safe
-range; với integer lớn hơn, dùng serializer raw-token thay vì ép sang `number`.
-`StringKeyTextRequest` có thể được `JSON.stringify()` trực tiếp.
+Wire request Caesar/Affine text bắt buộc là JSON integer token, không phải JSON
+string. Backend chấp nhận token tùy độ lớn; đây không phải contract string thay thế.
+Vì JavaScript `number` có thể làm tròn, giữ raw UI state dạng string và ghép token
+đã kiểm tra vào JSON mà không parse qua `number`. Chỉ dùng `CaesarTextRequest` hoặc
+`AffineTextRequest` với `Number.isSafeInteger(...)`; không gọi `JSON.stringify()`
+trực tiếp trên `bigint`. `StringKeyTextRequest` có thể `JSON.stringify()` trực tiếp.
+
+JSON integer **trên wire** có syntax `-?(0|[1-9][0-9]*)`: không có dấu `+`,
+decimal, exponent, leading zero hoặc whitespace trong token. Raw state của control
+numeric vẫn là string để giữ precision và accepted UI hiện tại vẫn cho phép outer
+whitespace/dấu `+`. Helper bên dưới trim rồi canonicalize riêng token wire bằng
+`BigInt`; nó không sửa raw state đang hiển thị và không tạo alternate string contract.
 
 ## 6. JSON response và xử lý lỗi
 
@@ -262,7 +332,12 @@ class ApiError extends Error {
 function isErrorResponse(value: unknown): value is ErrorResponse {
   if (typeof value !== "object" || value === null) return false;
   const body = value as Record<string, unknown>;
-  return body.success === false && typeof body.message === "string";
+  const keys = Object.keys(body);
+  return keys.length === 2
+    && keys.includes("success")
+    && keys.includes("message")
+    && body.success === false
+    && typeof body.message === "string";
 }
 
 async function readJsonSuccess(response: Response): Promise<SuccessResponse> {
@@ -285,11 +360,18 @@ async function readJsonSuccess(response: Response): Promise<SuccessResponse> {
     throw new ApiError(message, response.status);
   }
 
-  const success = body as Partial<SuccessResponse>;
-  if (success.success !== true || typeof success.result !== "string") {
+  const success = body as Record<string, unknown>;
+  const keys = Object.keys(success);
+  if (
+    keys.length !== 2
+    || !keys.includes("success")
+    || !keys.includes("result")
+    || success.success !== true
+    || typeof success.result !== "string"
+  ) {
     throw new ApiError("Đã xảy ra lỗi hệ thống.", response.status);
   }
-  return success as SuccessResponse;
+  return { success: true, result: success.result };
 }
 ```
 
@@ -302,24 +384,49 @@ async function readJsonSuccess(response: Response): Promise<SuccessResponse> {
 | Caesar | `{"text":"...","key":3}` | JSON integer thật; âm, 0, >25 và integer rất lớn đều hợp lệ |
 | Vigenère | `{"text":"...","key":"LEMON"}` | String không rỗng, toàn bộ khớp `[A-Za-z]+` |
 | Playfair | `{"text":"...","key":"PLAYFAIR EXAMPLE"}` | String không rỗng và còn ít nhất một ASCII letter sau normalization |
+| Affine | `{"text":"...","a":5,"b":8}` | Hai JSON integer thật; `a'` khả nghịch; không có default |
 
-`text` phải là string khác rỗng. Whitespace-only hợp lệ với Caesar/Vigenère;
+Runtime endpoint text nhận `application/json` hoặc media type `application/*+json`;
+OpenAPI hiện chỉ advertise `application/json`.
+`text` phải là string khác rỗng. Whitespace-only hợp lệ với Caesar/Vigenère/Affine;
 Playfair đi tiếp qua normalization rồi bị từ chối vì không còn ASCII letter.
+FE gửi nguyên `text`; không trim, normalize newline hoặc thay Unicode trước request.
 
 Caesar từ chối boolean, float, numeric string, array và object làm key. Vigenère/
 Playfair từ chối key JSON có giá trị nhưng không phải string bằng message
-`Khóa phải là chuỗi.`
+`Khóa phải là chuỗi.` FE gửi key string nguyên trạng: Vigenère không trim; Playfair
+normalization là trách nhiệm của server và không phải lý do để FE rewrite key.
+
+Affine yêu cầu chính xác ba member `text`, `a`, `b`; member lạ/trùng bị từ chối.
+Numeric string, float, boolean, array/object cho `a`/`b` dùng lỗi integer tương ứng
+và không coercion; thiếu hoặc `null` dùng lỗi thiếu khóa tương ứng. `(5,8)` không
+được server tự điền. JSON integer tùy độ lớn được backend giảm modulo theo token chữ số.
+
+Khác với Affine, JSON Caesar/Vigenère/Playfair giữ legacy behavior: member bổ sung
+được bỏ qua và member trùng được JSON decoder lấy lần xuất hiện cuối. FE không nên
+gửi hoặc dựa vào hai behavior này; request builder chuẩn chỉ phát mỗi field một lần.
 
 ### 7.2 Native fetch
 
 ```ts
-function caesarJsonBody(text: string, rawKey: string): string {
-  const value = rawKey.trim();
+function jsonIntegerToken(raw: string, missing: string, invalid: string): string {
+  const value = raw.trim();
+  if (value === "") throw new Error(missing);
   if (!/^[+-]?[0-9]+$/.test(value)) {
-    throw new Error(value === "" ? "Thiếu khóa." : "Khóa phải là số nguyên.");
+    throw new Error(invalid);
   }
-  const integerToken = BigInt(value).toString();
-  return `{"text":${JSON.stringify(text)},"key":${integerToken}}`;
+  return BigInt(value).toString();
+}
+
+function caesarJsonBody(text: string, rawKey: string): string {
+  const key = jsonIntegerToken(rawKey, "Thiếu khóa.", "Khóa phải là số nguyên.");
+  return `{"text":${JSON.stringify(text)},"key":${key}}`;
+}
+
+function affineJsonBody(text: string, rawA: string, rawB: string): string {
+  const a = jsonIntegerToken(rawA, "Thiếu khóa a.", "Khóa a phải là số nguyên.");
+  const b = jsonIntegerToken(rawB, "Thiếu khóa b.", "Khóa b phải là số nguyên.");
+  return `{"text":${JSON.stringify(text)},"a":${a},"b":${b}}`;
 }
 
 async function transformText(
@@ -328,7 +435,9 @@ async function transformText(
 ): Promise<SuccessResponse> {
   const body = input.cipher === "caesar"
     ? caesarJsonBody(input.text, input.key)
-    : JSON.stringify({ text: input.text, key: input.key });
+    : input.cipher === "affine"
+      ? affineJsonBody(input.text, input.a, input.b)
+      : JSON.stringify({ text: input.text, key: input.key });
 
   const response = await fetch(`/api/${input.cipher}/${operation}`, {
     method: "POST",
@@ -337,6 +446,20 @@ async function transformText(
   });
   return readJsonSuccess(response);
 }
+
+const affineEncrypted = await transformText("encrypt", {
+  cipher: "affine",
+  text: "HELLO",
+  a: "5",
+  b: "8",
+}); // result === "RCLLA"
+
+const affineDecrypted = await transformText("decrypt", {
+  cipher: "affine",
+  text: affineEncrypted.result,
+  a: "5",
+  b: "8",
+}); // result === "HELLO"
 ```
 
 FE phải xóa result/analysis cũ trước khi gọi, khóa control khi request đang chạy,
@@ -364,6 +487,16 @@ curl -sS -X POST http://localhost:8000/api/playfair/encrypt \
   -d '{"text":"HIDE THE GOLD IN THE TREE STUMP","key":"PLAYFAIR EXAMPLE"}'
 # {"success":true,"result":"BMODZBXDNABEKUDMUIXMMOUVIF"}
 
+curl -sS -X POST http://localhost:8000/api/affine/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"HELLO","a":5,"b":8}'
+# {"success":true,"result":"RCLLA"}
+
+curl -sS -X POST http://localhost:8000/api/affine/decrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"RCLLA","a":5,"b":8}'
+# {"success":true,"result":"HELLO"}
+
 # Representative text error: Vigenère key có khoảng trắng
 curl -sS -i -X POST http://localhost:8000/api/vigenere/encrypt \
   -H 'Content-Type: application/json' \
@@ -371,12 +504,14 @@ curl -sS -i -X POST http://localhost:8000/api/vigenere/encrypt \
 # HTTP 422; {"success":false,"message":"Khóa Vigenère chỉ được chứa chữ cái A-Z hoặc a-z."}
 ```
 
-Đổi `encrypt` thành `decrypt` và truyền ciphertext tương ứng để gọi ba endpoint
+Đổi `encrypt` thành `decrypt` và truyền ciphertext tương ứng để gọi bốn endpoint
 decrypt. Ví dụ Playfair decrypt trả normalized/prepared plaintext, không phục hồi input.
 
 ## 8. File flow
 
 ### 8.1 Multipart contract
+
+Ba route Caesar/Vigenère/Playfair dùng:
 
 | Field | Bắt buộc | Giá trị |
 |---|---:|---|
@@ -391,15 +526,41 @@ Không tự đặt `Content-Type` khi gửi `FormData`; browser phải thêm mul
 Caesar multipart key được trim, phải khớp `[+-]?[0-9]+` và dài tối đa 32 ký tự.
 Vigenère key phải khớp `[A-Za-z]+` mà không tự trim/sửa. Playfair key lọc ký tự
 không phải ASCII letter và hợp lệ nếu normalization còn ít nhất một chữ cái.
+FE vẫn append raw control value; không trim/rewrite text hoặc key trước khi gửi.
+
+Ba route legacy không có exact-field gate: field bổ sung bị bỏ qua và nếu một field
+single-value xuất hiện nhiều lần, binding hiện tại lấy lần xuất hiện cuối. Đây là
+behavior tương thích cũ, không phải cơ chế override cho FE; request builder phải chỉ
+gửi các field trong bảng và mỗi tên đúng một lần.
+
+Route Affine dùng exact field set riêng:
+
+| Field | Bắt buộc | Giá trị |
+|---|---:|---|
+| `file` | Có | File `.txt` UTF-8 theo contract chung |
+| `a` | Có | Signed-decimal string sau trim, tối đa 32 ký tự, không default |
+| `b` | Có | Signed-decimal string sau trim, tối đa 32 ký tự, không default |
+| `action` | Có | Chính xác `encrypt` hoặc `decrypt` |
+| `response_mode` | Không | `content` hoặc `file`; mặc định `content` |
+
+Affine từ chối field lạ/trùng trước field validation. `a`/`b` phải khớp toàn bộ
+`[+-]?[0-9]+`; độ dài 32 tính cả dấu sau trim. `a'` còn phải thỏa `gcd(a',26)=1`.
+FE append nguyên raw `a`/`b`; việc trim để validate multipart là trách nhiệm server.
+OpenAPI pattern nhìn như áp trực tiếp lên raw value và vì vậy không mô tả outer
+whitespace đã được runtime chấp nhận; contract runtime/spec ở đoạn này là authority.
 
 ### 8.2 Hai request bắt buộc
 
-1. Preview: gửi file gốc với `response_mode=content`; nhận JSON `{success,result}`.
+1. Preview: gửi file gốc với `response_mode=content`; nhận HTTP `200`,
+   `application/json` và đúng JSON `{success,result}`.
 2. Download: khi người dùng bấm tải, gửi lại file gốc bằng request thứ hai với
-   `response_mode=file`; nhận attachment server-owned.
+   `response_mode=file`; nhận HTTP `200`, `text/plain; charset=utf-8`, raw bytes và
+   `Content-Disposition: attachment` server-owned.
 
 FE không được đóng preview result vào Blob để giả làm official file download.
 Preview không mang trạng thái BOM đầu vào và không phải authority cho filename.
+Nếu request file lỗi ở bất kỳ mode nào, response vẫn là JSON `{success,message}`
+và không có attachment.
 
 ### 8.3 Native fetch
 
@@ -410,7 +571,12 @@ function createFileForm(
 ): FormData {
   const data = new FormData();
   data.append("file", input.file);
-  data.append("key", input.key);
+  if (input.cipher === "affine") {
+    data.append("a", input.a);
+    data.append("b", input.b);
+  } else {
+    data.append("key", input.key);
+  }
   data.append("action", input.action);
   data.append("response_mode", responseMode);
   return data;
@@ -462,6 +628,29 @@ async function downloadFile(input: FileInput): Promise<AttachmentResult> {
 
   return { blob: await response.blob(), filename };
 }
+
+const selected = document.querySelector<HTMLInputElement>("#file")?.files?.[0];
+if (!selected) throw new Error("Thiếu file.");
+
+const affineFileInput: AffineFileInput = {
+  cipher: "affine",
+  file: selected,
+  a: "5",
+  b: "8",
+  action: "encrypt",
+};
+
+const preview = await previewFile(affineFileInput); // JSON result từ server
+const attachment = await downloadFile(affineFileInput); // request server thứ hai
+const objectUrl = URL.createObjectURL(attachment.blob);
+const link = Object.assign(document.createElement("a"), {
+  href: objectUrl,
+  download: attachment.filename,
+});
+document.body.append(link);
+link.click();
+link.remove();
+setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 ```
 
 Sau khi nhận `AttachmentResult`, FE tạo object URL, kích hoạt download bằng
@@ -485,9 +674,14 @@ curl -sS -X POST http://localhost:8000/api/playfair/file \
   -F 'file=@input.txt;type=text/plain' -F 'key=PLAYFAIR EXAMPLE' \
   -F 'action=encrypt' -F 'response_mode=content'
 
-# Official attachment; áp dụng tương tự cho cả ba cipher
-curl -sS -OJ -X POST http://localhost:8000/api/playfair/file \
-  -F 'file=@input.txt;type=text/plain' -F 'key=PLAYFAIR EXAMPLE' \
+# Affine preview
+curl -sS -X POST http://localhost:8000/api/affine/file \
+  -F 'file=@input.txt;type=text/plain' -F 'a=5' -F 'b=8' \
+  -F 'action=encrypt' -F 'response_mode=content'
+
+# Affine official attachment: request thứ hai, server quyết định filename
+curl -sS -OJ -X POST http://localhost:8000/api/affine/file \
+  -F 'file=@input.txt;type=text/plain' -F 'a=5' -F 'b=8' \
   -F 'action=encrypt' -F 'response_mode=file'
 
 # Representative file error: lỗi vẫn là JSON dù yêu cầu attachment
@@ -499,14 +693,17 @@ curl -sS -i -X POST http://localhost:8000/api/caesar/file \
 
 ### 8.5 Byte, encoding, BOM và filename
 
-- Giới hạn chính xác: `5 MiB = 5 * 1024 * 1024 = 5.242.880 byte` nội dung file.
+- Giới hạn chính xác: `5 MiB = 5 * 1024 * 1024 = 5.242.880 byte` raw content,
+  tính cả ba byte BOM nếu có.
 - Đúng `5.242.880` byte qua bước size; `5.242.881` byte trả HTTP `413`.
 - Message cố ý dùng `File vượt quá dung lượng tối đa 5 MB.` dù phép đo là MiB.
 - Chỉ chấp nhận UTF-8 thường hoặc UTF-8 có BOM. Invalid UTF-8 trả HTTP `415`.
 - Content preview không chứa `U+FEFF` ở đầu result.
 - Attachment giữ BOM nếu và chỉ nếu input có BOM.
-- File `0` byte bị từ chối. Whitespace-only hợp lệ với Caesar/Vigenère nhưng không
-  hợp lệ với Playfair sau normalization.
+- Backend không normalize newline; cipher lossless giữ nguyên LF/CRLF, còn Playfair
+  chủ động loại format theo thuật toán.
+- File `0` byte bị từ chối. Whitespace-only hợp lệ với Caesar/Vigenère/Affine
+  nhưng không hợp lệ với Playfair sau normalization.
 - `.txt` kiểm tra không phân biệt hoa thường; `a.txt.exe` bị từ chối.
 
 Filename do server tạo:
@@ -517,8 +714,9 @@ note.txt       + decrypt → note.decrypted.txt
 bao.cao.TXT    + encrypt → bao.cao.encrypted.txt
 ```
 
-Server chỉ bỏ phần `.txt` cuối cùng, giữ các dấu chấm trước đó, không thêm tên
-thuật toán và luôn dùng `.txt` thường cho output.
+Server bỏ path component, chỉ bỏ phần `.txt` cuối cùng, giữ các dấu chấm trước đó,
+không thêm tên thuật toán và luôn dùng `.txt` thường cho output. FE lấy filename
+từ `Content-Disposition` (`filename*` UTF-8 được ưu tiên), không tự dựng lại tên.
 
 ### 8.6 Nội dung file theo cipher
 
@@ -527,6 +725,7 @@ thuật toán và luôn dùng `.txt` thường cho output.
 | Caesar | Giữ nguyên | Giữ nguyên | Chỉ ASCII letter đổi, giữ case |
 | Vigenère | Giữ nguyên; không làm key tiến | Giữ nguyên; không làm key tiến | Chỉ ASCII letter đổi, giữ case |
 | Playfair | Bị loại khi normalize | Bị loại | Uppercase ASCII, `J→I`, có thể có filler `X/Q` |
+| Affine | Giữ nguyên | Giữ nguyên | Chỉ ASCII letter đổi, giữ case; round-trip lossless |
 
 ## 9. Validation, status và message
 
@@ -537,10 +736,15 @@ thuật toán và luôn dùng `.txt` thường cho output.
 | `413` | Request text có một `Content-Length` decimal hợp lệ lớn hơn 64 MiB | `Yêu cầu vượt quá dung lượng cho phép.` |
 | `415` | Filename không kết thúc `.txt` | `Chỉ chấp nhận file .txt.` |
 | `415` | File không phải UTF-8 | `File phải sử dụng UTF-8.` |
-| `422` | JSON/multipart không đọc được | `Dữ liệu gửi lên không hợp lệ.` |
+| `422` | Sai media type, JSON/multipart không đọc được, body không phải object | `Dữ liệu gửi lên không hợp lệ.` |
 | `422` | Text thiếu, null, rỗng hoặc sai kiểu | `Văn bản không được để trống.` |
 | `422` | Key thiếu, null hoặc chuỗi rỗng | `Thiếu khóa.` |
 | `422` | Caesar key có giá trị nhưng không phải integer | `Khóa phải là số nguyên.` |
+| `422` | Affine JSON thiếu/null `a`; multipart thiếu/null/trim-rỗng `a` | `Thiếu khóa a.` |
+| `422` | Affine JSON `a` sai kiểu; multipart `a` sai grammar/length | `Khóa a phải là số nguyên.` |
+| `422` | Affine `a'` không khả nghịch | `Khóa a phải nguyên tố cùng nhau với 26.` |
+| `422` | Affine JSON thiếu/null `b`; multipart thiếu/null/trim-rỗng `b` | `Thiếu khóa b.` |
+| `422` | Affine JSON `b` sai kiểu; multipart `b` sai grammar/length | `Khóa b phải là số nguyên.` |
 | `422` | Vigenère/Playfair JSON key có giá trị nhưng không phải string | `Khóa phải là chuỗi.` |
 | `422` | Vigenère key có ký tự ngoài ASCII letter | `Khóa Vigenère chỉ được chứa chữ cái A-Z hoặc a-z.` |
 | `422` | Playfair key normalize không còn ASCII letter | `Khóa Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z.` |
@@ -554,7 +758,7 @@ thuật toán và luôn dùng `.txt` thường cho output.
 | `500` | Lỗi đọc file | `Không thể đọc file.` |
 | `500` | Lỗi hệ thống khác | `Đã xảy ra lỗi hệ thống.` |
 
-Thứ tự lỗi text sau request-size guard:
+Thứ tự lỗi text Caesar/Vigenère/Playfair sau request-size guard:
 
 ```text
 JSON object đọc được
@@ -565,7 +769,17 @@ JSON object đọc được
 → Playfair normalized text/ciphertext validation
 ```
 
-Thứ tự lỗi file sau request-size/multipart guard:
+Thứ tự lỗi text Affine:
+
+```text
+media type / JSON syntax / object / exact member set
+→ text presence/type/non-empty
+→ a presence/type/normalize/gcd
+→ b presence/type/normalize
+→ transform
+```
+
+Thứ tự lỗi file Caesar/Vigenère/Playfair sau request-size/multipart guard:
 
 ```text
 multipart đọc được
@@ -582,6 +796,18 @@ multipart đọc được
 → Playfair normalized content/ciphertext validation
 ```
 
+Thứ tự lỗi file Affine:
+
+```text
+multipart framing / exact field set / duplicate
+→ file presence/type
+→ a presence/grammar/length/normalize/gcd
+→ b presence/grammar/length/normalize
+→ action
+→ response_mode
+→ extension → 5 MiB → 0 byte → UTF-8 → transform
+```
+
 Backend dừng ở lỗi đầu tiên. FE không nên tự suy diễn rằng lỗi file/encoding đã
 qua chỉ vì request bị từ chối sớm ở key.
 
@@ -595,7 +821,7 @@ nghiệp vụ 5 MiB được đếm từ bytes nội dung upload.
 | FE chịu trách nhiệm | Backend chịu trách nhiệm |
 |---|---|
 | Kiểm tra sơ bộ để bật/tắt action | Kiểm tra wire type, policy và precedence thật |
-| Giữ key input type phù hợp cipher | Normalize/validate key và chạy core |
+| Giữ raw key/a/b phù hợp cipher và tránh mất precision | Normalize/validate khóa và chạy core |
 | Hiển thị cảnh báo Playfair lossy | Quyết định prepared plaintext và filler |
 | Kiểm tra sơ bộ extension, `File.size`, 0 byte | Đếm byte, UTF-8, BOM và filename attachment |
 | Loading, stale-result clearing, focus, live region | Status và exact response envelope/message |
@@ -605,8 +831,11 @@ nghiệp vụ 5 MiB được đếm từ bytes nội dung upload.
 FE không được:
 
 - coi client validation là bằng chứng request chắc chắn hợp lệ;
-- tính Caesar/Vigenère/Playfair client-side để thay result server;
-- trim/sửa key Vigenère rồi gửi một giá trị khác người dùng nhập;
+- tính Caesar/Vigenère/Playfair/Affine client-side để thay result server;
+- ép `a`/`b` Affine ngoài safe range qua JavaScript `number`;
+- trim/sửa `text`, string key hoặc raw multipart key rồi gửi giá trị khác người dùng
+  nhập; riêng numeric JSON control giữ raw state nhưng được canonicalize thành true
+  JSON integer token ở bước serialize;
 - xóa filler Playfair hoặc phục hồi formatting bằng heuristic;
 - dùng preview Blob làm official download cho nguồn file;
 - branch business logic theo chuỗi message tiếng Việt.
@@ -616,11 +845,11 @@ FE không được:
 State tối thiểu:
 
 ```text
-cipher     = caesar | vigenere | playfair
+cipher     = caesar | vigenere | playfair | affine
 mode       = encrypt | decrypt
 source     = text | file
 text/file  = input hiện tại
-key        = raw input
+key/a/b    = raw input theo cipher
 result     = null | server result
 loading    = boolean
 error      = null | user-facing message
@@ -631,15 +860,15 @@ view       = result | analysis
 |---|---|---|
 | Mở trang | `cipher=caesar`, `mode=encrypt`, `source=text`, `result=null`, `loading=false` | Action disabled tới khi hợp lệ |
 | Đổi cipher | Xóa result/analysis/error; validate lại key/input | Đổi key hint và Playfair warning |
-| Đổi encrypt/decrypt | Giữ input/key nếu phù hợp; xóa stale result/error | Đổi label plaintext/ciphertext |
+| Đổi encrypt/decrypt | Giữ input/key/a/b nếu phù hợp; xóa stale result/error | Đổi label plaintext/ciphertext |
 | Đổi text/file | Bắt buộc giữ draft riêng của text và file; xóa result/error | Hiện panel nguồn mới |
-| Sửa text, file hoặc key | Xóa result/analysis/error | Validate lại ngay |
+| Sửa text, file, key, `a` hoặc `b` | Xóa result/analysis/error | Validate lại ngay |
 | Submit preview/text | Xóa result; `loading=true` | Khóa control và chặn submit lặp |
 | Success | Lưu đúng server result; xóa error | Mở copy/download |
 | API/network failure | `result=null`, xóa analysis; lưu fallback/message | Mở khóa để retry |
 | Download click | Request file mode lần hai | Không dùng preview Blob |
 | Download failure | Xóa trạng thái success cũ | Hiện lỗi, không kích hoạt download |
-| Clear output | Chỉ xóa result/analysis | Giữ input/key |
+| Clear output | Chỉ xóa result/analysis | Giữ input/key/a/b |
 | Reset | Xóa toàn bộ state/draft/result/error; đưa status về neutral và view về result | Quay lại `caesar` + `encrypt` + `text` |
 
 Playfair phải có cảnh báo luôn nhìn thấy trước submit hoặc cạnh result:
@@ -654,13 +883,13 @@ bàn phím và có focus indicator.
 
 Các invariant UI Week 1 tiếp tục bắt buộc khi mở rộng thêm cipher:
 
-- Có ba status độc lập cho input, key và output; mỗi status có neutral/valid/error
-  bằng text và dấu hiệu không chỉ dựa vào màu.
+- Có ba nhóm status độc lập cho input, key (`key` hoặc cặp `a`/`b`) và output;
+  mỗi status có neutral/valid/error bằng text và dấu hiệu không chỉ dựa vào màu.
 - Result read-only có hai tab **Văn bản** và **Phân tích**; mặc định là Văn bản.
   Analysis chỉ diễn giải server result/input, không tự tạo ciphertext/plaintext.
 - Copy/Clear output và Download bị vô hiệu khi chưa có result. Clear output giữ
-  input/key; Reset toàn trang có semantics riêng như bảng trên.
-- Notice success/error đóng được và tự ẩn khi cipher/mode/source/input/key thay đổi.
+  input/key/a/b; Reset toàn trang có semantics riêng như bảng trên.
+- Notice success/error đóng được và tự ẩn khi cipher/mode/source/input/key/a/b thay đổi.
 - File panel hỗ trợ picker lẫn drag/drop, hiển thị tên, kích thước nhị phân, preview,
   **Đổi file** và **Gỡ file**.
 - Caesar mode giữ **Tạo ví dụ** (`Hello World`, key `3`) và shift-map hai hàng 26
@@ -672,19 +901,34 @@ Ma trận UI đầy đủ vẫn nằm trong
 [accepted web-ui spec](../openspec/changes/caesar-cipher-week1-mvp/specs/web-ui/spec.md);
 phần tóm tắt này không làm yếu bất kỳ requirement nào của spec đó.
 
-## 12. Migration checklist từ UI Caesar-only
+## 12. Migration checklist từ 9 lên 12 route
 
-- [ ] Thêm selector `caesar | vigenere | playfair`; không tạo endpoint động ngoài bảng 9 endpoint.
+- [ ] Mở endpoint allowlist từ 9 route Caesar/Vigenère/Playfair lên đúng 12 route
+  trong bảng; thêm selector `affine`, không tạo route generalized/versioned.
 - [ ] Route text/file dựa trên cipher đang chọn và luôn là URL `/api/...` tương đối.
+- [ ] Mở discriminated request types/builders: Caesar integer key, Vigenère/Playfair
+  string key, Affine hai key `a`/`b`.
+- [ ] Thêm state/hint/validation riêng cho raw `a` và `b`; cả hai bắt buộc, `(5,8)`
+  chỉ là gợi ý, và FE không tự sửa `a` không khả nghịch.
 - [ ] Giữ input key dạng raw string trong UI; serialize Caesar text thành JSON integer token.
+- [ ] Serialize Affine text thành hai JSON integer token không mất precision, không
+  đổi sang numeric string và không đi qua JavaScript `number` khi ngoài safe range.
+- [ ] Affine multipart gửi exact field `file,a,b,action,response_mode`; không gửi `key`.
 - [ ] Dùng string key nguyên trạng cho Vigenère/Playfair; đổi hint/validation theo cipher.
 - [ ] Thêm cảnh báo Playfair lossy, uppercase, `J→I` và retained filler `X/Q`.
-- [ ] Xóa stale result khi cipher/mode/source/input/key thay đổi hoặc request thất bại.
+- [ ] Xóa stale result khi cipher/mode/source/input/key/a/b thay đổi hoặc request thất bại.
 - [ ] Preview file dùng `response_mode=content`; download dùng request thứ hai mode `file`.
 - [ ] Dùng server attachment và filename; không tạo official file từ preview.
+- [ ] Error parser chỉ nhận `{success:false,message}`; không chờ `code`, `details`
+  hoặc metadata và không branch theo nội dung message.
+- [ ] Cập nhật OpenAPI snapshot/generated types nếu FE thực sự dùng chúng; thêm
+  contract test đếm đúng 12 route và test Affine text/preview/download/error.
 - [ ] Gỡ mock, `USE_MOCK`, local cipher result và hard-coded `API_BASE`/cổng 8080.
 - [ ] Dev server proxy `/api` tới backend 8000; không yêu cầu CORS.
-- [ ] Không thêm `normalizedInput`, machine `code` hoặc nhánh logic theo error message.
+- [ ] Không probe `/health` vì runtime hiện không công bố endpoint đó.
+
+Checklist này mô tả công việc consumer tương lai; change backend `add-affine-cipher`
+không triển khai hoặc sửa UI static/runtime FE.
 
 ## 13. Hành vi demo cũ không được sao chép
 
@@ -700,19 +944,27 @@ Không sao chép:
 - message/label tiếng Anh hoặc error shape có `code`;
 - bất kỳ client-generated production result nào.
 
-Demo không định nghĩa Playfair/Vigenère. Các ý tưởng layout có thể tham khảo, nhưng
-runtime/OpenSpec hiện tại quyết định hành vi.
+[`affine-cipher.html`](../affine-cipher.html) chỉ xác nhận công thức, residue hợp lệ
+và vector `HELLO → RCLLA`. Các điểm cố ý khác production là default UI `(5,8)`,
+input `type=number`/JavaScript `Number`, validation message động và kết quả tính
+client-side: không điểm nào là wire contract hay result authority. Runtime/OpenSpec
+hiện tại luôn thắng demo.
 
 ## 14. Acceptance checklist
 
-- [ ] Cả 9 endpoint được chọn đúng theo cipher/source/operation.
+- [ ] Cả 12 endpoint được chọn đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
 - [ ] Playfair canonical vector cho `BMODZBXDNABEKUDMUIXMMOUVIF` và decrypt giữ prepared text.
 - [ ] Playfair `XX→XQXQ→GWGW`, `ABX→ABXQ→PDGW`, `GWGW→XQXQ` đều đúng.
+- [ ] Affine `HELLO→RCLLA→HELLO` với `(5,8)` và mixed/Unicode/CRLF giữ đúng contract.
+- [ ] Affine có đúng 12 residue `a'`, 26 residue `b'` và 312 cặp normalized hợp lệ.
 - [ ] FE không strip filler và hiển thị cảnh báo Playfair không lossless.
-- [ ] Caesar text gửi JSON integer; Vigenère/Playfair text gửi string key.
-- [ ] Whitespace-only: Caesar/Vigenère thành công, Playfair trả normalized-empty 422.
+- [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`; Vigenère/Playfair gửi string key.
+- [ ] Affine integer ngoài JS safe range không bị chuyển qua `number` hoặc làm tròn.
+- [ ] FE không trim/rewrite text, string key hoặc multipart key trước khi gửi; raw
+  numeric JSON state chỉ được canonicalize thành number token ở serializer.
+- [ ] Whitespace-only: Caesar/Vigenère/Affine thành công, Playfair trả normalized-empty 422.
 - [ ] Vigenère giữ Unicode/CRLF và không làm key tiến; Caesar giữ non-ASCII/CRLF.
 - [ ] Playfair loại Unicode/CRLF/format và trả uppercase ASCII.
 - [ ] Validation hiển thị server message nhưng không dùng message làm identifier.
@@ -722,23 +974,44 @@ runtime/OpenSpec hiện tại quyết định hành vi.
 - [ ] Invalid UTF-8 trả 415; `.TXT` hợp lệ; `.txt.exe` bị từ chối.
 - [ ] Content preview bỏ BOM; attachment giữ BOM đúng theo input.
 - [ ] Filename dùng `.encrypted.txt`/`.decrypted.txt`, kể cả tên nhiều dấu chấm.
-- [ ] Cipher/mode/source/input/key thay đổi hoặc request lỗi đều xóa stale result.
+- [ ] Affine multipart `a`/`b` được server trim/validate grammar/32 ký tự; exact
+  fields, duplicate/additional-field rejection và precedence đúng.
+- [ ] Legacy request builder không dựa vào behavior bỏ qua field lạ/lấy duplicate cuối.
+- [ ] Cipher/mode/source/input/key/a/b thay đổi hoặc request lỗi đều xóa stale result.
 - [ ] Loading chặn submit/drop lặp; UI có keyboard, focus và live-region behavior.
 - [ ] Caesar regression: ba endpoint và integer-key contract cũ vẫn hoạt động như trước.
 - [ ] FE dùng same-origin `/api`; local dev dùng proxy, không mock/CORS/API base cũ.
-- [ ] `/docs` và `/openapi.json` được dùng để đối chiếu runtime contract.
+- [ ] `/docs` và `/openapi.json` được dùng để đối chiếu runtime contract; không giả
+  định `/health` tồn tại.
 
 ## 15. Source precedence và bảo trì
 
 Thứ tự áp dụng:
 
-1. [Completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
-   cùng [completed OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/).
-2. Runtime và `/openapi.json` tại backend commit
-   `1792a29a8925dc7122ebbe62fe55caef14a00a18` để xác nhận cách contract được hiện thực.
-3. Consumer guide này, là bản diễn giải dành cho FE và phải được sửa nếu lệch hai nguồn trên.
-4. Source DOCX và [bản scope Caesar bảo tồn](../docs/reference/be-scope-v1.0.md) để truy vết.
-5. Demo HTML/mock cũ chỉ để tham khảo, không có quyền ghi đè accepted behavior.
+1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
+   [OpenSpec Affine active](../openspec/changes/add-affine-cipher/),
+   [completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
+   và [completed OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/);
+   sau đó current implementation/tests cho observed behavior; cuối cùng runtime
+   `/openapi.json` là machine-readable projection. Known OpenAPI under-description
+   ở §2 không được dùng để thu hẹp behavior đã được spec/runtime test chấp nhận.
+2. [README hiện tại](../README.md) và consumer guide này; nếu lệch mục 1 thì guide
+   phải được sửa, không được biến wording cũ thành contract mới.
+3. [`affine-cipher.html`](../affine-cipher.html) và demo/mock cũ chỉ để tham khảo,
+   không có quyền ghi đè production behavior. Source DOCX và
+   [bản scope Caesar bảo tồn](../docs/reference/be-scope-v1.0.md) chỉ dùng truy vết.
+
+Nếu các nguồn trong primary tier mâu thuẫn ngoài các under-description đã ghi rõ,
+đó là defect cần reconcile với owner/spec, không phải quyền để FE tự chọn behavior
+hoặc để guide âm thầm redesign contract.
+
+Các implementation link chính để audit contract là
+[`schemas.py`](../app/api/schemas.py),
+[`messages.py`](../app/errors/messages.py),
+[`file_processing.py`](../app/services/file_processing.py),
+[`routes_affine_text.py`](../app/api/routes_affine_text.py) và
+[`routes_affine_file.py`](../app/api/routes_affine_file.py). Guide phản ánh active
+`add-affine-cipher` working tree pending commit; không có SHA nào được suy đoán.
 
 Guide không lặp toàn bộ ma trận scenario hoặc decision history của OpenSpec. Khi
 API/behavior thay đổi, cập nhật OpenSpec trước, rồi cập nhật guide này trong cùng

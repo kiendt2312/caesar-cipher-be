@@ -32,7 +32,7 @@ rules:
     - Nêu rõ các điểm mâu thuẫn giữa docx và HTML demo đã được giải quyết thế nào
     - Có mục "Ngoài phạm vi" bám theo docx mục 8
   specs:
-    - Mỗi requirement phải truy vết được về mục tương ứng trong docx (ghi kèm tham chiếu, ví dụ "docx §2.4")
+    - Mỗi requirement phải truy vết tới nguồn có thẩm quyền; thông thường là mục DOCX quản trị tương ứng (ví dụ "docx §2.4"), còn khi không có DOCX có thẩm quyền thì được dùng tập nguồn hoặc decision record do chủ sở hữu phê duyệt rõ ràng nếu requirement dẫn chiếu cụ thể (ví dụ "quyết định chủ sở hữu cho change này") theo thứ tự ưu tiên đã chốt; không chấp nhận requirement không có truy vết
     - Scenario phải phủ đủ bảng validation docx mục 5 gồm HTTP status và thông báo chính xác
     - Ngoại lệ hạ tầng ngoài docx chỉ được thêm khi chủ sở hữu phê duyệt rõ ràng; phải gắn nhãn "ngoại lệ hạ tầng được chủ sở hữu phê duyệt", không được sửa hoặc trình bày sai nguồn sự thật nghiệp vụ trong docx
   tasks:

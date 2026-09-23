@@ -27,6 +27,31 @@ class InvalidKeyError(CaesarError):
         super().__init__(422, messages.INVALID_KEY)
 
 
+class MissingAffineMultiplierError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.MISSING_AFFINE_MULTIPLIER)
+
+
+class InvalidAffineMultiplierError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_AFFINE_MULTIPLIER)
+
+
+class NonInvertibleAffineMultiplierError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.NON_INVERTIBLE_AFFINE_MULTIPLIER)
+
+
+class MissingAffineShiftError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.MISSING_AFFINE_SHIFT)
+
+
+class InvalidAffineShiftError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_AFFINE_SHIFT)
+
+
 class InvalidStringKeyError(CaesarError):
     def __init__(self) -> None:
         super().__init__(422, messages.INVALID_STRING_KEY)

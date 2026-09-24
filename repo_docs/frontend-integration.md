@@ -5,8 +5,9 @@ Caesar, Vigenère, Playfair, Affine và Columnar Transposition. Nội dung độ
 framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript thuần, nhưng hành vi
 API và trạng thái quan sát được phải giữ đúng contract dưới đây.
 
-- Backend áp dụng: working tree hiện tại đã implement xong change
-  `add-columnar-transposition-cipher` nhưng chưa commit; guide không pin một SHA cũ.
+- Backend áp dụng: Columnar được publish trên branch
+  `feature/add-columnar-transposition-cipher` tại commit đã xác minh
+  `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
 - Ngày cập nhật guide: `2026-09-24`.
 - Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
   Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
@@ -100,6 +101,19 @@ Backend stateless: không lưu input, key, file, result, session hoặc history 
 
 Text endpoints nhận `application/json` hoặc `application/*+json`. File endpoints
 nhận `multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
+
+Contract wire riêng của ba route Columnar:
+
+| Endpoint | Request chính xác | HTTP 200 | Status lỗi được công bố |
+|---|---|---|---|
+| `POST /api/columnar/encrypt` | JSON object chỉ có `text:string`, `key:string` | `application/json`: `{"success":true,"result":"<ciphertext>"}` | `413`, `422`, `500` |
+| `POST /api/columnar/decrypt` | JSON object chỉ có `text:string`, `key:string` | `application/json`: `{"success":true,"result":"<plaintext>"}` | `413`, `422`, `500` |
+| `POST /api/columnar/file` | Multipart chỉ có required `file,key,action`; optional `response_mode` | mode `content`: JSON `{success,result}`; mode `file`: `text/plain; charset=utf-8` attachment | `413`, `415`, `422`, `500` |
+
+Mọi lỗi của cả ba route dùng `application/json` và đúng
+`{"success":false,"message":"<tiếng Việt>"}`. JSON text runtime còn nhận media type
+vendor `application/*+json` (và parameter hợp lệ), dù OpenAPI chỉ quảng bá
+`application/json`.
 
 ## 4. Thuật toán FE cần hiểu
 
@@ -204,20 +218,42 @@ không khả nghịch hoặc dùng phép tính client làm result chính thức.
 ### 4.5 Columnar Transposition
 
 Backend ghi text theo hàng với `m` cột vật lý và đọc cột theo rank khóa. Không có
-padding/normalization; mọi Unicode code point, CR/LF, whitespace, combining mark,
-emoji và `U+FEFF` không ở đầu được hoán vị nguyên trạng. Encrypt/decrypt lossless
-khi dùng cùng khóa.
+padding/normalization; mọi Unicode code point, CR/LF, whitespace, combining mark
+và emoji được hoán vị như phần tử độc lập. Với JSON text, `U+FEFF` ở bất kỳ vị trí
+nào cũng là dữ liệu; chỉ prefix byte UTF-8 BOM của file upload mới là metadata.
+Encrypt/decrypt lossless khi dùng cùng khóa.
 
-Key luôn là string, trim chỉ ASCII whitespace và dài tối đa 2.048 ký tự sau trim:
+Key luôn là string, trim ở hai đầu chỉ sáu ASCII whitespace `SP`, `TAB`, `CR`,
+`LF`, `FF`, `VT` và dài tối đa 2.048 Unicode code point sau trim:
 
 - numeric permutation có đúng rank `1..m`, `2 ≤ m ≤ 256`, token phân cách bằng
-  dấu phẩy hoặc ASCII whitespace và có thể có một cặp `{...}` ngoài cùng;
+  một dấu phẩy có thể kèm ASCII whitespace, hoặc một hay nhiều ASCII whitespace;
+  có thể có đúng một cặp `{...}` ngoài cùng. Ví dụ `3 1 4 2`, `3,1,4,2` và
+  `{3, 1 4,2}`;
 - keyword khớp `[A-Za-z]{2,256}`, xếp rank case-insensitive và ổn định theo vị trí
   gốc khi trùng chữ. `BALLOON → [2,1,3,4,6,7,5]`.
 
 Không gửi compact digits, leading zero, dấu, decimal/exponent, Unicode digit hoặc
-keyword có space/non-ASCII. Vector chính: `ABCDE + "3 1 4 2" → BDAEC` và
-`MEET ME AT NOON + BALLOON → EAM NETT EO NMO`.
+keyword có space/non-ASCII. Sáu vector canonical (ký hiệu `\r`, `\n` là code point
+CR/LF thực trong string):
+
+| Input | Key | Encrypt result |
+|---|---|---|
+| `khoacongnghethongtin` | `3 6 2 1 5 4` | `agnonokntioetchghghn` |
+| `ABCDE` | `3 1 4 2` | `BDAEC` |
+| `MEET ME AT NOON` | `BALLOON` | `EAM NETT EO NMO` |
+| `A B\r\nC!` | `2 1 3` | ` \nA\r!BC` |
+| `😀A𝄞é` | `2 1 3` | `A😀é𝄞` |
+| `XY` | `3 1 2 4` | `YX` |
+
+Decrypt từng result bằng cùng key phải trả đúng input, kể cả hàng cuối thiếu cột,
+whitespace/CRLF, non-BMP và trường hợp số cột lớn hơn số code point.
+
+FE phải giữ nguyên `text` và key khi serialize: không gọi `trim()`, normalize
+Unicode/newline, đổi case, collapse whitespace hoặc chuyển numeric-looking key
+thành number. Nếu dựng visualization, lưu ý JavaScript indexing/`.length` dùng
+UTF-16 code unit; backend hoán vị Unicode code point, không phải code unit hay
+grapheme cluster. Result chính thức vẫn luôn là response server.
 
 ## 5. TypeScript contract dùng trực tiếp
 
@@ -429,9 +465,10 @@ Khác với Affine, JSON Caesar/Vigenère/Playfair giữ legacy behavior: member
 gửi hoặc dựa vào hai behavior này; request builder chuẩn chỉ phát mỗi field một lần.
 
 Columnar giống Affine ở exact-shape gate: object phải có đúng `text,key`, không
-field lạ/trùng. Key number/bool/null không được coercion. Decoder từ chối mọi lone
-hoặc misordered JSON surrogate trong member name/text/key trước field validation;
-escaped surrogate pair hợp lệ có parity với ký tự non-BMP literal.
+field lạ/trùng. Key thiếu, `null` hoặc string rỗng sau ASCII trim trả `Thiếu khóa.`;
+number/bool/array/object trả `Khóa phải là chuỗi.` và không được coercion. Decoder
+từ chối mọi lone hoặc misordered JSON surrogate trong member name/text/key trước
+field validation; escaped surrogate pair hợp lệ có parity với ký tự non-BMP literal.
 
 ### 7.2 Native fetch
 
@@ -588,8 +625,10 @@ OpenAPI pattern nhìn như áp trực tiếp lên raw value và vì vậy không
 whitespace đã được runtime chấp nhận; contract runtime/spec ở đoạn này là authority.
 
 Route Columnar cũng dùng exact field set, gồm required `file,key,action` và optional
-`response_mode`. `key` phải là scalar string theo §4.5; key upload part, field lạ
-hoặc duplicate đều bị từ chối. OpenAPI mô tả key bằng prose cùng examples
+`response_mode`. `file` phải là upload part có filename; scalar `file` là invalid
+body, còn upload part với `filename=""` đi đến lỗi extension `415`. MIME khai báo
+không quyết định validity. `key` phải là scalar string theo §4.5; key upload part,
+field lạ hoặc duplicate đều bị từ chối. OpenAPI mô tả key bằng prose cùng examples
 `3 1 4 2`, `BALLOON`, không dùng `pattern`, `oneOf` hoặc raw `maxLength` gây hiểu sai.
 
 ### 8.2 Hai request bắt buộc
@@ -731,6 +770,11 @@ curl -sS -OJ -X POST http://localhost:8000/api/affine/file \
 curl -sS -X POST http://localhost:8000/api/columnar/file \
   -F 'file=@input.txt;type=text/plain' -F 'key=BALLOON' \
   -F 'action=encrypt' -F 'response_mode=content'
+
+# Columnar official attachment: gửi lại file gốc, dùng filename/BOM từ server
+curl -sS -OJ -X POST http://localhost:8000/api/columnar/file \
+  -F 'file=@input.txt;type=application/octet-stream' -F 'key=BALLOON' \
+  -F 'action=encrypt' -F 'response_mode=file'
 
 # Representative file error: lỗi vẫn là JSON dù yêu cầu attachment
 curl -sS -i -X POST http://localhost:8000/api/caesar/file \
@@ -1018,7 +1062,7 @@ Không sao chép:
 - message/label tiếng Anh hoặc error shape có `code`;
 - bất kỳ client-generated production result nào.
 
-[`affine-cipher.html`](../affine-cipher.html) chỉ xác nhận công thức, residue hợp lệ
+`affine-cipher.html` là reference ngoài repository chỉ xác nhận công thức, residue hợp lệ
 và vector `HELLO → RCLLA`. Các điểm cố ý khác production là default UI `(5,8)`,
 input `type=number`/JavaScript `Number`, validation message động và kết quả tính
 client-side: không điểm nào là wire contract hay result authority. Runtime/OpenSpec
@@ -1068,7 +1112,7 @@ hiện tại luôn thắng demo.
 Thứ tự áp dụng:
 
 1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
-   [OpenSpec Columnar active](../openspec/changes/add-columnar-transposition-cipher/),
+   [OpenSpec Columnar implementation-complete, active](../openspec/changes/add-columnar-transposition-cipher/),
    [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
    [completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
    và [completed OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/);
@@ -1077,7 +1121,7 @@ Thứ tự áp dụng:
    ở §2 không được dùng để thu hẹp behavior đã được spec/runtime test chấp nhận.
 2. [README hiện tại](../README.md) và consumer guide này; nếu lệch mục 1 thì guide
    phải được sửa, không được biến wording cũ thành contract mới.
-3. [`affine-cipher.html`](../affine-cipher.html) và demo/mock cũ chỉ để tham khảo,
+3. `affine-cipher.html` (reference ngoài repository) và demo/mock cũ chỉ để tham khảo,
    không có quyền ghi đè production behavior. Source DOCX và
    [bản scope Caesar bảo tồn](../docs/reference/be-scope-v1.0.md) chỉ dùng truy vết.
 
@@ -1092,9 +1136,9 @@ Các implementation link chính để audit contract là
 [`routes_affine_text.py`](../app/api/routes_affine_text.py) và
 [`routes_affine_file.py`](../app/api/routes_affine_file.py),
 [`routes_columnar_text.py`](../app/api/routes_columnar_text.py) và
-[`routes_columnar_file.py`](../app/api/routes_columnar_file.py). Guide phản ánh
-active `add-columnar-transposition-cipher` working tree pending commit; không có
-SHA nào được suy đoán.
+[`routes_columnar_file.py`](../app/api/routes_columnar_file.py). Contract Columnar
+trong guide được đối chiếu với commit publish đã xác minh
+`c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
 
 Guide không lặp toàn bộ ma trận scenario hoặc decision history của OpenSpec. Khi
 API/behavior thay đổi, cập nhật OpenSpec trước, rồi cập nhật guide này trong cùng

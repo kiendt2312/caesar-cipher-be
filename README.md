@@ -139,14 +139,16 @@ lossless. Khóa âm/lớn được normalize; ví dụ `(-21,-18)` và `(57,60)`
 
 Columnar ghi text theo hàng với `m` cột vật lý rồi đọc cột theo rank khóa. Không
 padding, không normalize và không bỏ ký tự; mọi Unicode code point, whitespace,
-CR/LF, combining mark và `U+FEFF` không ở đầu đều tham gia hoán vị như nhau.
+CR/LF và combining mark đều tham gia hoán vị như nhau. Với JSON text, `U+FEFF`
+kể cả ở đầu là dữ liệu; chỉ leading UTF-8 BOM của file upload là metadata.
 
-Key là JSON/multipart string, trim **chỉ ASCII whitespace**, tối đa 2.048 ký tự
-sau trim và mô tả 2 đến 256 cột. Hai dạng được nhận:
+Key là JSON/multipart string, trim **chỉ ASCII whitespace**, tối đa 2.048 Unicode
+code point sau trim và tạo từ 2 đến 256 cột. Hai dạng được nhận:
 
-- Numeric permutation: các rank `1..m` xuất hiện đúng một lần, cách nhau bằng dấu
-  phẩy hoặc ASCII whitespace; có thể có đúng một cặp `{...}` ngoài cùng. Ví dụ
-  `3 1 4 2` hoặc `{3,1,4,2}`. Compact digits `312`, leading zero, dấu, decimal,
+- Numeric permutation: các rank `1..m` xuất hiện đúng một lần. Separator là một
+  dấu phẩy có thể kèm ASCII whitespace, hoặc một hay nhiều ASCII whitespace; có
+  thể trộn hai dạng và bọc đúng một cặp `{...}` ngoài cùng. Ví dụ `3 1 4 2`,
+  `3,1,4,2` hoặc `{3, 1 4,2}`. Compact digits `312`, leading zero, dấu, decimal,
   exponent, empty token và Unicode digit đều không hợp lệ.
 - Keyword: đúng `[A-Za-z]{2,256}`. Rank được tạo case-insensitive, ổn định theo vị
   trí gốc khi trùng chữ; `BALLOON` cho `[2,1,3,4,6,7,5]`.
@@ -186,7 +188,8 @@ contract request/response đã test.
 
 ### 3.1 Text JSON
 
-Hai endpoint text của mỗi cipher nhận `Content-Type: application/json`:
+OpenAPI quảng bá `Content-Type: application/json` cho các endpoint text; runtime
+cũng nhận `application/*+json` và media type parameter hợp lệ:
 
 | Cipher | Body | Kiểu key |
 |---|---|---|
@@ -196,9 +199,9 @@ Hai endpoint text của mỗi cipher nhận `Content-Type: application/json`:
 | Affine | `{"text":"HELLO","a":5,"b":8}` | Hai JSON integer thật; không có default |
 | Columnar | `{"text":"ABCDE","key":"3 1 4 2"}` | String numeric permutation hoặc keyword |
 
-`text` phải là string khác rỗng. Chuỗi chỉ có whitespace hợp lệ với Caesar và
-Vigenère; Playfair từ chối nếu normalization không còn ASCII letter.
-Affine cũng chấp nhận whitespace-only. Riêng hai route Affine yêu cầu object có
+`text` phải là string khác rỗng. Chuỗi chỉ có whitespace hợp lệ với Caesar,
+Vigenère, Affine và Columnar; Playfair từ chối nếu normalization không còn ASCII
+letter. Riêng hai route Affine yêu cầu object có
 chính xác `text`, `a`, `b`: field lạ hoặc trùng bị từ chối. `a`/`b` phải là JSON
 integer token thật, không coercion string/float/bool/null và không bị giới hạn bởi
 JavaScript safe integer; client phải serialize mà không làm tròn. Hai route
@@ -330,7 +333,8 @@ Key sai wire type dùng `Khóa phải là chuỗi.`; content sai dùng
 ## 5. Contract file
 
 - Chỉ nhận filename kết thúc bằng `.txt`, không phân biệt hoa thường; ví dụ
-  `.TXT` hợp lệ nhưng `.txt.exe` không hợp lệ.
+  `.TXT` hợp lệ nhưng `.txt.exe` không hợp lệ. MIME upload không quyết định tính
+  hợp lệ; filename và bytes là authority.
 - File phải là UTF-8 thường hoặc UTF-8 có BOM.
 - Giới hạn chính xác là `5 MiB = 5 * 1024 * 1024 = 5.242.880 byte` nội dung file.
   Đúng giới hạn được chấp nhận; `5.242.881` byte trả HTTP `413`. Message public
@@ -516,7 +520,7 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec Columnar đang được apply](openspec/changes/add-columnar-transposition-cipher/)
+1. [OpenSpec Columnar đã hoàn tất implementation và đang active](openspec/changes/add-columnar-transposition-cipher/)
    cho Columnar, [OpenSpec Affine](openspec/changes/add-affine-cipher/) cho Affine,
    [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/add-playfair-vigenere-ciphers/)
    cho hai cipher đó, cùng

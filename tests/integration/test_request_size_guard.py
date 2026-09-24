@@ -10,7 +10,7 @@ import pytest
 from starlette.types import Message, Receive, Scope, Send
 
 from app import config
-from app.api.request_size_guard import MultipartCompletionGuard, RequestSizeGuard
+from app.api.request_size_guard import FILE_ROUTE_PATHS, MultipartCompletionGuard, RequestSizeGuard
 from app.errors import messages
 from app.main import app
 
@@ -105,6 +105,7 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
         ("/api/vigenere/file", messages.FILE_TOO_LARGE),
         ("/api/playfair/file", messages.FILE_TOO_LARGE),
         ("/api/affine/file", messages.FILE_TOO_LARGE),
+        ("/api/columnar/file", messages.FILE_TOO_LARGE),
         ("/api/caesar/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/vigenere/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/vigenere/decrypt", messages.REQUEST_TOO_LARGE),
@@ -112,6 +113,8 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
         ("/api/playfair/decrypt", messages.REQUEST_TOO_LARGE),
         ("/api/affine/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/affine/decrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/columnar/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/columnar/decrypt", messages.REQUEST_TOO_LARGE),
         ("/api/not-a-file-route", messages.REQUEST_TOO_LARGE),
         ("/docs", messages.REQUEST_TOO_LARGE),
     ],
@@ -204,7 +207,13 @@ def test_oversized_decimal_with_leading_zeros_is_rejected_without_integer_conver
 )
 @pytest.mark.parametrize(
     "path",
-    ["/api/caesar/file", "/api/vigenere/file", "/api/playfair/file", "/api/affine/file"],
+    [
+        "/api/caesar/file",
+        "/api/vigenere/file",
+        "/api/playfair/file",
+        "/api/affine/file",
+        "/api/columnar/file",
+    ],
 )
 def test_multipart_completion_requires_a_line_delimited_closing_boundary(
     ending: bytes,
@@ -242,6 +251,16 @@ def test_multipart_completion_requires_a_line_delimited_closing_boundary(
     asyncio.run(exercise())
 
     assert observed == [expected]
+
+
+def test_file_route_guard_inventory_is_exactly_five() -> None:
+    assert {
+        "/api/caesar/file",
+        "/api/vigenere/file",
+        "/api/playfair/file",
+        "/api/affine/file",
+        "/api/columnar/file",
+    } == FILE_ROUTE_PATHS
 
 
 def test_multipart_completion_guard_ignores_routes_outside_exact_file_set() -> None:

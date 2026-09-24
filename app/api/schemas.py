@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import FormData, UploadFile
 
 from app.core.affine import normalize_keys as normalize_affine_keys
+from app.core.columnar import ASCII_WHITESPACE
+from app.core.columnar import parse_key as parse_columnar_key
 from app.core.playfair import normalize_keyword as normalize_playfair_keyword
 from app.core.playfair import normalize_text as normalize_playfair_text
 from app.errors.exceptions import (
@@ -19,6 +21,7 @@ from app.errors.exceptions import (
     InvalidActionError,
     InvalidAffineMultiplierError,
     InvalidAffineShiftError,
+    InvalidColumnarKeyError,
     InvalidKeyError,
     InvalidPlayfairKeyError,
     InvalidRequestBodyError,
@@ -87,6 +90,21 @@ class AffineTextCipherRequest(BaseModel):
     text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
     a: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
     b: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
+
+
+class ColumnarTextCipherRequest(BaseModel):
+    """Strict raw JSON fields for deterministic Columnar validation."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "required": ["text", "key"],
+            "additionalProperties": False,
+        },
+    )
+
+    text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
+    key: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
 
 
 class TextCipherResponse(BaseModel):
@@ -195,6 +213,46 @@ def decode_affine_text_request(raw: bytes, content_type: str | None) -> AffineTe
         if type(decoded) is not dict:
             raise InvalidRequestBodyError()
         return AffineTextCipherRequest.model_validate(decoded)
+    except InvalidRequestBodyError:
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
+        raise InvalidRequestBodyError() from exc
+
+
+def _has_json_surrogate(value: Any) -> bool:
+    if isinstance(value, str):
+        return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+    if isinstance(value, list):
+        return any(_has_json_surrogate(item) for item in value)
+    if isinstance(value, dict):
+        return any(
+            _has_json_surrogate(key) or _has_json_surrogate(item) for key, item in value.items()
+        )
+    return False
+
+
+def decode_columnar_text_request(
+    raw: bytes,
+    content_type: str | None,
+) -> ColumnarTextCipherRequest:
+    """Decode one exact Columnar JSON object and reject residual surrogates."""
+
+    media_type = content_type.partition(";")[0].strip().lower() if content_type else ""
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise InvalidRequestBodyError()
+
+    try:
+        decoded = json.loads(
+            raw,
+            parse_int=JsonIntegerToken,
+            parse_constant=_reject_nonstandard_json_constant,
+            object_pairs_hook=_strict_json_object,
+        )
+        if _has_json_surrogate(decoded) or type(decoded) is not dict:
+            raise InvalidRequestBodyError()
+        return ColumnarTextCipherRequest.model_validate(decoded)
     except InvalidRequestBodyError:
         raise
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as exc:
@@ -320,6 +378,69 @@ def validate_affine_file_form(
         parsed_response_mode = response_mode
 
     return file, normalized_multiplier, shift, action, parsed_response_mode
+
+
+def _parse_columnar_key(value: Any) -> tuple[int, ...]:
+    if value is MISSING or value is None:
+        raise MissingKeyError()
+    if type(value) is not str:
+        raise InvalidStringKeyError()
+    if value.strip(ASCII_WHITESPACE) == "":
+        raise MissingKeyError()
+
+    try:
+        return parse_columnar_key(value)
+    except ValueError:
+        raise InvalidColumnarKeyError() from None
+
+
+def validate_columnar_text_request(
+    payload: ColumnarTextCipherRequest,
+) -> tuple[str, tuple[int, ...]]:
+    """Apply Columnar text validation in text then key precedence."""
+
+    if payload.text is MISSING or type(payload.text) is not str or payload.text == "":
+        raise EmptyTextError()
+    return payload.text, _parse_columnar_key(payload.key)
+
+
+def validate_columnar_file_form(
+    form: FormData,
+) -> tuple[
+    UploadFile,
+    tuple[int, ...],
+    Literal["encrypt", "decrypt"],
+    Literal["content", "file"],
+]:
+    """Validate one exact Columnar multipart form in deterministic order."""
+
+    allowed = {"file", "key", "action", "response_mode"}
+    items = list(form.multi_items())
+    names = [name for name, _ in items]
+    if any(name not in allowed for name in names) or len(names) != len(set(names)):
+        raise InvalidRequestBodyError()
+
+    file = form.get("file", MISSING)
+    if file is MISSING or file is None:
+        raise MissingFileError()
+    if not isinstance(file, UploadFile):
+        raise InvalidRequestBodyError()
+
+    ranks = _parse_columnar_key(form.get("key", MISSING))
+
+    action = form.get("action", MISSING)
+    if action not in ("encrypt", "decrypt"):
+        raise InvalidActionError()
+
+    response_mode = form.get("response_mode", MISSING)
+    if response_mode is MISSING or response_mode is None:
+        parsed_response_mode = "content"
+    elif response_mode not in ("content", "file"):
+        raise InvalidResponseModeError()
+    else:
+        parsed_response_mode = response_mode
+
+    return file, ranks, action, parsed_response_mode
 
 
 def parse_multipart_key(value: Any) -> int:

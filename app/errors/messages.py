@@ -15,6 +15,7 @@ INVALID_AFFINE_SHIFT = "Khóa b phải là số nguyên."
 INVALID_STRING_KEY = "Khóa phải là chuỗi."
 INVALID_VIGENERE_KEY = "Khóa Vigenère chỉ được chứa chữ cái A-Z hoặc a-z."
 INVALID_PLAYFAIR_KEY = "Khóa Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z."
+INVALID_COLUMNAR_KEY = "Khóa Columnar phải là hoán vị 1..m hoặc từ khóa gồm 2 đến 256 chữ cái A-Z."
 PLAYFAIR_TEXT_EMPTY = "Văn bản Playfair phải chứa ít nhất một chữ cái A-Z hoặc a-z."
 PLAYFAIR_CIPHERTEXT_ODD = "Bản mã Playfair phải chứa số lượng chữ cái chẵn."
 PLAYFAIR_DUPLICATE_DIGRAPH = "Bản mã Playfair không được chứa cặp hai chữ cái giống nhau."
@@ -50,6 +51,7 @@ CANONICAL_MESSAGES = (
     INVALID_STRING_KEY,
     INVALID_VIGENERE_KEY,
     INVALID_PLAYFAIR_KEY,
+    INVALID_COLUMNAR_KEY,
     PLAYFAIR_TEXT_EMPTY,
     PLAYFAIR_CIPHERTEXT_ODD,
     PLAYFAIR_DUPLICATE_DIGRAPH,

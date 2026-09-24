@@ -67,6 +67,11 @@ class InvalidPlayfairKeyError(CaesarError):
         super().__init__(422, messages.INVALID_PLAYFAIR_KEY)
 
 
+class InvalidColumnarKeyError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_COLUMNAR_KEY)
+
+
 class EmptyPlayfairTextError(CaesarError):
     def __init__(self) -> None:
         super().__init__(422, messages.PLAYFAIR_TEXT_EMPTY)

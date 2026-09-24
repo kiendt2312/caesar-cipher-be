@@ -16,6 +16,7 @@ FILE_ROUTE_PATHS = frozenset(
         "/api/vigenere/file",
         "/api/playfair/file",
         "/api/affine/file",
+        "/api/columnar/file",
     }
 )
 
